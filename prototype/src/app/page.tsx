@@ -1,11 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/hooks/useProfile";
+import { useScan } from "@/hooks/useScan";
+import type { AnalysisResult } from "@/hooks/useScan";
+import { useChatHistory, groupSessionsByDate, type ChatSession } from "@/hooks/useChatHistory";
 import ICloudBackground from "@/components/ICloudBackground";
-import PhoneFrame from "@/components/PhoneFrame";
 import TopBar from "@/components/TopBar";
-import { questions, traitColors } from "@/lib/questions";
-import { Camera, ChevronDown, Lock, Mail, PenLine, Shield, Check, ArrowRight, Flashlight, User, Bell, CreditCard, HelpCircle, LogOut, ChevronRight, Settings, X, Send, Paperclip, Sparkles, Mic, ThumbsUp, ThumbsDown, Star, Home as HomeIcon, QrCode, BarChart3, Landmark, Brain, MessageCircle } from "lucide-react";
+import ChatScreen from "@/components/ChatScreen";
+import { SkeletonFinancialHealth, SkeletonProcessingPreview, Skeleton } from "@/components/Skeleton";
+import { ComingSoonModal } from "@/components/ComingSoonModal";
+import { questions, traitColors, traitDescriptions } from "@/lib/questions";
+import { Camera, ChevronDown, Lock, Mail, PenLine, Shield, Check, ArrowRight, Flashlight, User, Bell, CreditCard, HelpCircle, LogOut, ChevronRight, Settings, X, Send, Paperclip, Sparkles, Mic, ThumbsUp, ThumbsDown, Star, Home as HomeIcon, QrCode, BarChart3, Landmark, Brain, MessageCircle, ShoppingBag, Lightbulb } from "lucide-react";
+import { Haptics } from "@/lib/haptics";
 
 type Screen =
   | "splash"
@@ -25,45 +33,31 @@ type Screen =
   | "brand-asset";
 
 const loginSlides = ["login-1", "login-2", "login-3", "login-4"] as const;
-const noNavScreens = new Set(["splash", "brand-asset", "login-1", "login-2", "login-3", "login-4", "info", "processing", "results", "user-profile", "faith", "profile", "scan", "scan-result", "scan-result-pro", "banking", "analytics", ...Array.from({ length: 15 }, (_, i) => `q${i + 1}`)]);
-const lightScreens = new Set(["splash", "brand-asset", "login-1", "login-2", "login-3", "login-4", "info", "processing", "results", "profile", "user-profile", "faith", "scan", "scan-result", "scan-result-pro", "banking", "analytics", ...Array.from({ length: 15 }, (_, i) => `q${i + 1}`)]);
 
-const sidebarItems = [
-  { section: "Brand", items: [
-    { id: "splash", label: "01 Splash Screen" },
-    { id: "brand-asset", label: "02 Brand Asset" },
-  ]},
-  { section: "Onboarding", items: [
-    { id: "login-1", label: "03 Login - Slide 1" },
-    { id: "login-2", label: "04 Login - Slide 2" },
-    { id: "login-3", label: "05 Login - Slide 3" },
-    { id: "login-4", label: "06 Login - Sign In" },
-    { id: "info", label: "07 Personal Info" },
-  ]},
-  { section: "Psych Profile", items: Array.from({ length: 15 }, (_, i) => ({
-    id: `q${i + 1}`,
-    label: `${String(i + 8).padStart(2, "0")} ${questions[i].facet}`,
-  }))},
-  { section: "Results", items: [
-    { id: "processing", label: "23 Processing" },
-    { id: "results", label: "24 OCEAN Results" },
-  ]},
-  { section: "App", items: [
-    { id: "profile", label: "25 Profile (Nav)" },
-    { id: "user-profile", label: "26 User Profile" },
-    { id: "faith", label: "27 Faith Chat" },
-    { id: "scan", label: "28 Feels Like Scan" },
-    { id: "scan-result", label: "29 Scan Result" },
-    { id: "scan-result-pro", label: "30 Scan Result (Pro)" },
-    { id: "banking", label: "31 Banking" },
-    { id: "analytics", label: "32 Analytics" },
-  ]},
-];
 
 export default function Home() {
-  const [screen, setScreen] = useState<Screen>("splash");
-  const [prevScreen, setPrevScreen] = useState<Screen>("splash");
+  const { user, setHasCompletedOnboarding } = useAuth();
+  const { profile, updateProfile } = useProfile();
+
+  // Derive initials from profile name
+  const deriveInitials = (name: string | null): string => {
+    if (!name) return "?";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) {
+      return parts[0].charAt(0).toUpperCase();
+    }
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  };
+  const userInitials = deriveInitials(profile?.name ?? null);
+
+  // DEV MODE: Skip onboarding and go straight to main app
+  const DEV_SKIP_ONBOARDING = true;
+
+  const [screen, setScreen] = useState<Screen>(DEV_SKIP_ONBOARDING ? "scan" : "splash");
+  const [prevScreen, setPrevScreen] = useState<Screen>(DEV_SKIP_ONBOARDING ? "scan" : "splash");
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const [savedProgress, setSavedProgress] = useState<{ questionNum: number } | null>(null);
   const [openTraits, setOpenTraits] = useState<Set<string>>(new Set());
   const [faithFocused, setFaithFocused] = useState(false);
   const [scanFocused, setScanFocused] = useState(false);
@@ -71,6 +65,7 @@ export default function Home() {
   const [drawerX, setDrawerX] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [drawerSearchOpen, setDrawerSearchOpen] = useState(false);
+  const [drawerSearchQuery, setDrawerSearchQuery] = useState("");
   const [drawerSkipAnim, setDrawerSkipAnim] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileAnimating, setProfileAnimating] = useState(false);
@@ -83,58 +78,265 @@ export default function Home() {
   const [altTab, setAltTab] = useState(0);
   const [navExpanded, setNavExpanded] = useState(false);
   const [profilePage, setProfilePage] = useState(0);
+  const [comingSoonModal, setComingSoonModal] = useState<{ open: boolean; feature: 'banking' | 'analytics' | 'blueprint' | null }>({ open: false, feature: null });
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
+  const scan = useScan();
+  const { psychologyCost, fetchPsychologyCost } = scan;
+  const [scanAnalysis, setScanAnalysis] = useState<AnalysisResult | null>(null);
+  const [scanPreview, setScanPreview] = useState<string | null>(null);
+  const [scanPrice, setScanPrice] = useState<number | null>(null);
+  const [editingPrice, setEditingPrice] = useState<string>("");
+
+  // OCEAN scoring state - DEV: pre-populate with mock scores when skipping onboarding
+  const [oceanScores, setOceanScores] = useState<Record<string, number> | null>(
+    DEV_SKIP_ONBOARDING ? { openness: 72, conscientiousness: 58, extraversion: 65, agreeableness: 71, neuroticism: 38 } : null
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Dynamic insights state
+  const [faithInsights, setFaithInsights] = useState<string | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+
+  // Personal Info form state
+  const [infoForm, setInfoForm] = useState({ name: "", email: "", dob: "", phone: "" });
+
+  // Emotional tax state
+  const [emotionalTax, setEmotionalTax] = useState<{ total_tax: number; scan_count: number } | null>(null);
+  const [emotionalTaxLoading, setEmotionalTaxLoading] = useState(false);
+
+  // Scan context to pass to Faith chat
+  const [pendingScanContext, setPendingScanContext] = useState<{
+    scan_id: string;
+    product_name?: string;
+    overall_score?: number;
+    estimated_price?: number;
+    psychology_cost?: number;
+    verdict?: string;
+  } | null>(null);
+
+  // Chat history state
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const chatHistory = useChatHistory();
+
+  // Filter sessions by search query
+  const filteredSessions = drawerSearchQuery.trim()
+    ? chatHistory.sessions.filter(s =>
+        s.title.toLowerCase().includes(drawerSearchQuery.toLowerCase()) ||
+        s.first_message_preview.toLowerCase().includes(drawerSearchQuery.toLowerCase())
+      )
+    : chatHistory.sessions;
+  const groupedSessions = groupSessionsByDate(filteredSessions);
+
+  // Handler for selecting a session from history
+  const handleSelectSession = useCallback((session: ChatSession) => {
+    setActiveSessionId(session.session_id);
+    setDrawerOpen(false);
+    setDrawerSearchOpen(false);
+    setDrawerSearchQuery("");
+  }, []);
+
+  // Handler for starting a new chat
+  const handleNewChat = useCallback(() => {
+    setActiveSessionId(null);
+    setDrawerOpen(false);
+    setDrawerSearchOpen(false);
+    setDrawerSearchQuery("");
+  }, []);
+
+  // Handler when chat creates a new session
+  const handleChatNewSession = useCallback((sessionId: string) => {
+    setActiveSessionId(sessionId);
+    // Refresh history to include the new session
+    chatHistory.refresh();
+  }, [chatHistory.refresh]);
 
   const go = (s: Screen) => { setPrevScreen(screen); setScreen(s); };
   const goFromNav = (s: Screen) => { setNavExpanded(true); go(s); setTimeout(() => setNavExpanded(false), 600); };
-  const isLight = lightScreens.has(screen);
-  const showNav = !noNavScreens.has(screen);
+
+  // Helper to check if user has completed the OCEAN quiz
+  const hasOceanScores = !!(profile?.big_five && Object.keys(profile.big_five).length > 0);
+
+  // Guarded navigation for Faith - redirects to quiz if no OCEAN scores
+  const goToFaith = () => {
+    if (!hasOceanScores) {
+      go("q1");
+      return;
+    }
+    go("faith");
+  };
+
+  const goToFaithFromNav = () => {
+    if (!hasOceanScores) {
+      setNavExpanded(true);
+      go("q1");
+      setTimeout(() => setNavExpanded(false), 600);
+      return;
+    }
+    goFromNav("faith");
+  };
+
+  useEffect(() => {
+    if (screen === "scan") {
+      scan.startCamera();
+    } else {
+      scan.stopCamera();
+    }
+  }, [screen, scan.startCamera, scan.stopCamera]);
+
+  // Auto-redirect from splash to login after 2.5 seconds
+  useEffect(() => {
+    if (screen === "splash") {
+      const timer = setTimeout(() => go("login-1"), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [screen]);
+
+  // Guard Faith screen - redirect to quiz if no OCEAN scores
+  useEffect(() => {
+    if (DEV_SKIP_ONBOARDING) return; // Skip guard in dev mode
+    if (screen === "faith" && (!profile?.big_five || Object.keys(profile.big_five).length === 0)) {
+      go("q1");
+    }
+  }, [screen, profile]);
+
+  useEffect(() => {
+    if (DEV_SKIP_ONBOARDING) return; // Skip onboarding redirect in dev mode
+    const onboardingScreens = new Set([
+      "splash", "login-1", "login-2", "login-3", "login-4", "info", "processing", "results",
+      ...Array.from({ length: 15 }, (_, i) => `q${i + 1}`)
+    ]);
+
+    if (user && !user.hasCompletedOnboarding && !onboardingScreens.has(screen)) {
+      go("login-1");
+    }
+  }, [user, screen]);
+
+  // Quiz persistence: Load saved answers on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = localStorage.getItem('fincore_quiz_progress');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Only restore if we have actual answers and user hasn't completed onboarding
+        if (parsed.answers && Object.keys(parsed.answers).length > 0 && !user?.hasCompletedOnboarding) {
+          const lastQuestion = Math.max(...Object.keys(parsed.answers).map(Number));
+          setSavedProgress({ questionNum: lastQuestion + 1 });
+          setShowResumePrompt(true);
+        }
+      }
+    } catch (e) {
+      console.warn('[Fincore] Failed to restore quiz progress:', e);
+    }
+  }, [user?.hasCompletedOnboarding]);
+
+  // Quiz persistence: Save answers on change
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (Object.keys(selectedAnswers).length > 0) {
+      try {
+        localStorage.setItem('fincore_quiz_progress', JSON.stringify({
+          answers: selectedAnswers,
+          timestamp: Date.now(),
+          userId: user?.id
+        }));
+      } catch (e) {
+        console.warn('[Fincore] Failed to save quiz progress:', e);
+      }
+    }
+  }, [selectedAnswers, user?.id]);
+
+  // Fetch personalized insights when OCEAN scores are available
+  useEffect(() => {
+    if (profile?.big_five && user?.id && !faithInsights) {
+      setInsightsLoading(true);
+      fetch(`/api/profile/${user.id}/insights`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.insights) setFaithInsights(data.insights);
+        })
+        .catch(() => {})
+        .finally(() => setInsightsLoading(false));
+    }
+  }, [profile?.big_five, user?.id, faithInsights]);
+
+  // Pre-populate Personal Info form when profile loads
+  useEffect(() => {
+    if (profile?.name) {
+      setInfoForm(prev => ({ ...prev, name: profile.name ?? "" }));
+    }
+    if (profile?.email) {
+      setInfoForm(prev => ({ ...prev, email: profile.email ?? "" }));
+    }
+  }, [profile]);
+
+  // Fetch emotional tax data when on profile screen
+  useEffect(() => {
+    if (screen === "profile" && user?.id && hasOceanScores && !emotionalTax) {
+      setEmotionalTaxLoading(true);
+      fetch(`/api/users/${user.id}/emotional-tax`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && typeof data.total_tax === "number") {
+            setEmotionalTax({ total_tax: data.total_tax, scan_count: data.scan_count });
+          }
+        })
+        .catch(() => {})
+        .finally(() => setEmotionalTaxLoading(false));
+    }
+  }, [screen, user?.id, hasOceanScores, emotionalTax]);
 
   return (
-    <div className="flex h-screen">
+    <div id="app-root" className="relative overflow-hidden bg-[#0a1628]">
       <ICloudBackground />
 
-      {/* Sidebar */}
-      <aside className="w-[290px] glass border-r border-white/40 fixed inset-y-0 left-0 z-[100] overflow-y-auto no-scrollbar p-3">
-        <div className="flex items-center gap-3 px-3 pb-5 pt-2">
-          <div className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-base font-sans">F</div>
-          <div>
-            <div className="font-sans font-bold text-[17px] text-text-primary tracking-tight">Fincore AI</div>
-            <div className="text-[11px] text-text-tertiary">Design Prototype v3</div>
-          </div>
-        </div>
-        {sidebarItems.map((sec) => (
-          <div key={sec.section}>
-            <div className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wider px-3.5 pt-4 pb-1.5">{sec.section}</div>
-            {sec.items.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  if (item.id === "user-profile") { setProfileOpen(true); setProfileAnimating(true); requestAnimationFrame(() => requestAnimationFrame(() => setProfileAnimating(false))); }
-                  else { setProfileOpen(false); go(item.id as Screen); }
-                }}
-                className={`w-full text-left flex items-center gap-2.5 px-3.5 py-2 rounded-xl text-[13.5px] font-medium transition-all mb-[1px] ${
-                  (screen === item.id || (item.id === "user-profile" && profileOpen))
-                    ? "bg-primary text-white"
-                    : "text-text-secondary hover:bg-primary/[0.06] hover:text-text-primary"
-                }`}
-              >
-                <span className={`text-[13px] w-[22px] text-center font-mono ${screen === item.id ? "opacity-100" : "opacity-50"}`}>
-                  {item.label.slice(0, 2)}
-                </span>
-                <span className="truncate">{item.label.slice(3)}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-      </aside>
-
-      {/* Main */}
-      <main className="ml-[290px] flex-1 flex items-center justify-center min-h-screen p-10 relative z-[1]">
-        <PhoneFrame statusLight={isLight} showNav={showNav} activeTab={screen === "scan" ? "feels" : screen === "faith" ? "faith" : screen === "profile" ? "home" : "home"} onTabChange={(tab) => {
-          if (tab === "feels") go("scan");
-          else if (tab === "faith") go("faith");
-          else if (tab === "home") go("profile");
-        }}>
+      {/* Quiz Resume Prompt Modal */}
+          {showResumePrompt && savedProgress && (
+            <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+              <div className="liquid-glass rounded-[24px] p-6 max-w-[300px] text-center">
+                <h3 className="text-[18px] font-bold text-white mb-2">Welcome Back!</h3>
+                <p className="text-[14px] text-white/60 mb-4">
+                  You have a quiz in progress (Question {savedProgress.questionNum}/15).
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      localStorage.removeItem('fincore_quiz_progress');
+                      setSelectedAnswers({});
+                      setShowResumePrompt(false);
+                      setSavedProgress(null);
+                      go('q1');
+                    }}
+                    className="flex-1 h-11 rounded-2xl bg-white/10 text-white text-[14px] font-semibold"
+                  >
+                    Start Over
+                  </button>
+                  <button
+                    onClick={() => {
+                      const saved = localStorage.getItem('fincore_quiz_progress');
+                      if (saved) {
+                        const parsed = JSON.parse(saved);
+                        setSelectedAnswers(parsed.answers);
+                        const lastQuestion = Math.max(...Object.keys(parsed.answers).map(Number));
+                        if (lastQuestion < 15) {
+                          go(`q${lastQuestion + 1}` as Screen);
+                        } else {
+                          go('processing');
+                        }
+                      }
+                      setShowResumePrompt(false);
+                      setSavedProgress(null);
+                    }}
+                    className="flex-1 h-11 rounded-2xl bg-primary text-white text-[14px] font-semibold"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* SPLASH */}
           {screen === "splash" && (
@@ -152,7 +354,7 @@ export default function Home() {
 
           {screen === "brand-asset" && (
             <div className="h-full flex flex-col relative overflow-hidden bg-[#f2f2f7]">
-              <div className="pt-[54px] px-5 pb-3">
+              <div className="safe-top px-5 pb-3">
                 <h2 className="font-sans text-[24px] font-bold text-[#1c1c1e] tracking-tight">Brand Assets</h2>
                 <p className="text-[13px] text-[#8e8e93] mt-0.5">Download assets for use across platforms</p>
               </div>
@@ -226,19 +428,19 @@ export default function Home() {
           {/* LOGIN SLIDES */}
           {loginSlides.map((slideId, slideIdx) => (
             screen === slideId && (
-              <div key={slideId} className="h-full relative overflow-hidden">
+              <div key={slideId} className="h-full relative overflow-y-auto overflow-x-hidden">
                 <BlueWaveBg id="login" animated />
-                <div className="absolute top-[58px] inset-x-4 flex gap-1 z-50">
+                <div className="absolute top-[58px] inset-x-4 flex gap-1 z-50 pointer-events-auto">
                   {loginSlides.map((_, i) => (
                     <div key={i} className="flex-1 h-[3px] rounded-full bg-white/25 overflow-hidden cursor-pointer" onClick={() => go(loginSlides[i])}>
                       <div className={`h-full bg-white rounded-full ${i < slideIdx ? "w-full" : i === slideIdx ? "story-filling" : "w-0"}`} />
                     </div>
                   ))}
                 </div>
-                <div className="relative z-10 flex flex-col h-full pt-20 px-5 pb-8">
+                <div className="relative z-10 flex flex-col h-full px-4" style={{ paddingTop: 'calc(80px + env(safe-area-inset-top, 0px))', paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))' }}>
                   {slideIdx < 3 ? (
                     <>
-                      <h1 className="font-sans text-[32px] font-bold text-white leading-[1.15] tracking-tight mb-3">
+                      <h1 className="font-sans text-[28px] font-bold text-white leading-[1.15] tracking-tight mb-3">
                         {slideIdx === 0 && <>Psychological<br />Profile</>}
                         {slideIdx === 1 && "Meet Faith"}
                         {slideIdx === 2 && <>Feels Like<br />Pricing</>}
@@ -262,27 +464,29 @@ export default function Home() {
                     </>
                   ) : (
                     <div className="flex flex-col h-full">
-                      <div className="mb-4">
-                        <h1 className="font-sans text-[32px] font-bold text-white leading-[1.15] tracking-tight mb-3">Welcome to Fincore</h1>
-                        <p className="text-[17px] text-white/65 leading-relaxed">Sign in to get started</p>
+                      <div className="mb-6">
+                        <h1 className="font-sans text-[28px] font-bold text-white leading-[1.15] tracking-tight mb-2">Welcome to Fincore</h1>
+                        <p className="text-[15px] text-white/65 leading-relaxed">Sign in to get started</p>
                       </div>
-                      <div className="flex-1 flex items-center -mt-16">
-                      <div className="glass-dark rounded-[28px] p-6 w-full">
+                      <div className="flex-1 flex items-start">
+                      <div className="glass-dark rounded-[28px] p-5 w-full">
                         {[
                           { name: "Google", icon: <svg width="20" height="20" viewBox="0 0 20 20"><path d="M19.6 10.2c0-.7-.1-1.4-.2-2H10v3.8h5.4c-.2 1.2-.9 2.2-2 2.9v2.4h3.2c1.9-1.7 2.9-4.3 2.9-7.1z" fill="#4285F4" /><path d="M10 20c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H1.1v2.6C2.7 17.8 6.1 20 10 20z" fill="#34A853" /><path d="M4.4 12c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V5.4H1.1C.4 6.8 0 8.4 0 10s.4 3.2 1.1 4.6L4.4 12z" fill="#FBBC05" /><path d="M10 4c1.5 0 2.8.5 3.9 1.5l2.9-2.9C15 .9 12.7 0 10 0 6.1 0 2.7 2.2 1.1 5.4L4.4 8c.8-2.3 3-4.1 5.6-4.1z" fill="#EA4335" /></svg> },
                           { name: "Microsoft", icon: <svg width="20" height="20" viewBox="0 0 20 20"><rect width="9" height="9" fill="#F25022" /><rect x="10.5" width="9" height="9" fill="#7FBA00" /><rect y="10.5" width="9" height="9" fill="#00A4EF" /><rect x="10.5" y="10.5" width="9" height="9" fill="#FFB900" /></svg> },
                           { name: "Apple", icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="#000"><path d="M17.05 13.78c-.32.7-.47 1.01-.88 1.63-.57.87-1.37 1.95-2.37 1.96-.88.01-1.11-.58-2.31-.57-1.19.01-1.44.58-2.33.57-1-.01-1.76-1-2.33-1.86-1.6-2.43-1.77-5.28-.78-6.8.7-1.08 1.81-1.71 2.84-1.71 1.06 0 1.72.58 2.6.58.85 0 1.37-.58 2.6-.58.92 0 1.9.5 2.6 1.36-2.29 1.26-1.92 4.53.36 5.42zM12.98 5.15c.44-.57.78-1.37.66-2.19-.72.05-1.57.51-2.06 1.11-.44.54-.81 1.35-.67 2.14.79.02 1.61-.44 2.07-1.06z" /></svg> },
                         ].map((p) => (
-                          <button key={p.name} onClick={() => go("info")} className="w-full flex items-center gap-3.5 px-[18px] h-[50px] bg-white/85 border border-white/90 rounded-[32px] text-[15px] font-medium text-text-primary hover:bg-white hover:shadow-md transition-all mb-2 last:mb-0">
+                          <button key={p.name} onClick={() => termsAccepted && go("info")} disabled={!termsAccepted} className={`w-full flex items-center gap-3 px-4 h-[48px] border rounded-[24px] text-[14px] font-medium transition-all mb-2 last:mb-0 ${termsAccepted ? "bg-white/85 border-white/90 text-text-primary hover:bg-white hover:shadow-md" : "bg-white/40 border-white/50 text-text-secondary cursor-not-allowed"}`}>
                             <span className="w-[22px] h-[22px] flex items-center justify-center">{p.icon}</span>
                             Continue with {p.name}
                           </button>
                         ))}
-                        <div className="flex items-start gap-2.5 mt-4 text-[13px] text-white/75 leading-snug">
-                          <div className="w-5 h-5 rounded-md border-2 border-white/50 bg-white/15 flex items-center justify-center flex-shrink-0 mt-0.5"><Check size={12} className="text-white" strokeWidth={3} /></div>
+                        <button type="button" onClick={() => setTermsAccepted(!termsAccepted)} className="flex items-start gap-2 mt-3 text-[12px] text-white/75 leading-snug text-left w-full">
+                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${termsAccepted ? "border-primary bg-primary" : "border-white/50 bg-white/15"}`}>
+                            {termsAccepted && <Check size={10} className="text-white" strokeWidth={3} />}
+                          </div>
                           <span>I agree to the <u>Terms of Service</u> and <u>Privacy Policy</u></span>
-                        </div>
-                        <div className="mt-3.5 py-3 px-4 bg-white/10 rounded-[32px] text-[13px] text-white/65 text-center font-medium flex items-center justify-center gap-1.5"><Lock size={12} /> Two-factor verification required</div>
+                        </button>
+                        <div className="mt-3 py-2.5 px-3 bg-white/10 rounded-[20px] text-[12px] text-white/65 text-center font-medium flex items-center justify-center gap-1.5"><Lock size={11} /> Two-factor verification required</div>
                       </div>
                       </div>
                     </div>
@@ -294,10 +498,10 @@ export default function Home() {
 
           {/* PERSONAL INFO */}
           {screen === "info" && (
-            <div className="h-full flex flex-col relative overflow-hidden">
+            <div className="h-full flex flex-col relative overflow-y-auto overflow-x-hidden">
               <BlueWaveBg id="info" animated />
-              <div className="flex-1 flex flex-col px-5 pb-8 relative z-10">
-                <div className="pt-[54px] pb-4">
+              <div className="flex-1 flex flex-col px-5 safe-bottom relative z-10">
+                <div className="safe-top pb-4">
                   <div className="flex items-center gap-3">
                     <button onClick={() => go("login-4")} className="w-[42px] h-[42px] rounded-full flex items-center justify-center hover:bg-white/10 transition-colors shrink-0">
                       <ArrowRight size={20} className="text-white rotate-180" />
@@ -307,15 +511,55 @@ export default function Home() {
                   <p className="text-[12px] text-white/50 ml-[55px] -mt-0.5">We just need a few details</p>
                 </div>
                 <div className="bg-white/95 backdrop-blur-xl rounded-[28px] p-6 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-                  {[{ l: "Full Name", p: "e.g. Jordan Smith" }, { l: "Date of Birth", p: "DD / MM / YYYY" }, { l: "Email", p: "you@email.com" }, { l: "Phone", p: "+44 7XXX XXXXXX" }].map((f) => (
-                    <div key={f.l} className="mb-[18px] last:mb-0">
-                      <label className="block text-[13px] font-semibold text-text-secondary mb-1.5">{f.l}</label>
-                      <input readOnly className="w-full px-[18px] py-[15px] bg-surface border border-black/[0.06] rounded-[32px] text-base text-text-primary outline-none focus:border-primary focus:ring-4 focus:ring-primary/25 placeholder:text-text-tertiary" placeholder={f.p} />
-                    </div>
-                  ))}
+                  <div className="mb-[18px]">
+                    <label className="block text-[13px] font-semibold text-text-secondary mb-1.5">Full Name</label>
+                    <input
+                      value={infoForm.name}
+                      onChange={(e) => setInfoForm(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-[18px] py-[15px] bg-surface border border-black/[0.06] rounded-[32px] text-base text-text-primary outline-none focus:border-primary focus:ring-4 focus:ring-primary/25 placeholder:text-text-tertiary"
+                      placeholder="e.g. Jordan Smith"
+                    />
+                  </div>
+                  <div className="mb-[18px]">
+                    <label className="block text-[13px] font-semibold text-text-secondary mb-1.5">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={infoForm.dob}
+                      onChange={(e) => setInfoForm(prev => ({ ...prev, dob: e.target.value }))}
+                      className="w-full px-[18px] py-[15px] bg-surface border border-black/[0.06] rounded-[32px] text-base text-text-primary outline-none focus:border-primary focus:ring-4 focus:ring-primary/25 placeholder:text-text-tertiary"
+                    />
+                  </div>
+                  <div className="mb-[18px]">
+                    <label className="block text-[13px] font-semibold text-text-secondary mb-1.5">Email</label>
+                    <input
+                      type="email"
+                      value={infoForm.email}
+                      onChange={(e) => setInfoForm(prev => ({ ...prev, email: e.target.value }))}
+                      className="w-full px-[18px] py-[15px] bg-surface border border-black/[0.06] rounded-[32px] text-base text-text-primary outline-none focus:border-primary focus:ring-4 focus:ring-primary/25 placeholder:text-text-tertiary"
+                      placeholder="you@email.com"
+                    />
+                  </div>
+                  <div className="mb-0">
+                    <label className="block text-[13px] font-semibold text-text-secondary mb-1.5">Phone</label>
+                    <input
+                      type="tel"
+                      value={infoForm.phone}
+                      onChange={(e) => setInfoForm(prev => ({ ...prev, phone: e.target.value }))}
+                      className="w-full px-[18px] py-[15px] bg-surface border border-black/[0.06] rounded-[32px] text-base text-text-primary outline-none focus:border-primary focus:ring-4 focus:ring-primary/25 placeholder:text-text-tertiary"
+                      placeholder="+44 7XXX XXXXXX"
+                    />
+                  </div>
                 </div>
                 <div className="mt-auto pt-4">
-                  <button onClick={() => go("q1")} className="w-full h-[50px] bg-white text-primary rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.15)]">Continue</button>
+                  <button onClick={async () => {
+                    if (infoForm.name.trim()) {
+                      await updateProfile({
+                        name: infoForm.name,
+                        email: infoForm.email,
+                      });
+                    }
+                    go("q1");
+                  }} className="w-full h-[50px] bg-white text-primary rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.15)]">Continue</button>
                 </div>
               </div>
             </div>
@@ -323,17 +567,17 @@ export default function Home() {
 
           {/* SURVEY */}
           {questions.map((q) => screen === `q${q.id}` && (
-            <div key={q.id} className="h-full flex flex-col relative overflow-hidden">
+            <div key={q.id} className="h-full flex flex-col relative overflow-y-auto overflow-x-hidden">
               <BlueWaveBg id={`q${q.id}`} animated />
               {/* Story progress bars */}
-              <div className="absolute top-[54px] inset-x-4 flex gap-1 z-[55]">
+              <div className="absolute inset-x-4 flex gap-1 z-[55]" style={{ top: 'calc(54px + env(safe-area-inset-top, 0px))' }}>
                 {Array.from({ length: 15 }, (_, i) => (
                   <div key={i} className="flex-1 h-[3px] rounded-full bg-white/25 overflow-hidden">
                     <div className={`h-full bg-white rounded-full ${i < q.id - 1 ? "w-full" : i === q.id - 1 ? "story-filling" : "w-0"}`} />
                   </div>
                 ))}
               </div>
-              <div className="flex-1 flex flex-col pt-[74px] px-5 pb-8 relative z-10">
+              <div className="flex-1 flex flex-col px-5 safe-bottom relative z-10" style={{ paddingTop: 'calc(74px + env(safe-area-inset-top, 0px))' }}>
                 <span className="text-[12px] font-semibold text-white/50 mb-3">{q.id} of 15</span>
                 <div className="mb-5">
                   <h2 className="font-sans text-[28px] font-bold text-white leading-snug tracking-tight mb-2">{q.text}</h2>
@@ -344,7 +588,7 @@ export default function Home() {
                   {q.options.map((opt, oi) => {
                     const sel = selectedAnswers[q.id] === oi;
                     return (
-                      <button key={oi} onClick={() => setSelectedAnswers((p) => ({ ...p, [q.id]: oi }))} className={`flex items-center gap-3.5 px-[18px] h-[68px] rounded-[32px] border-2 transition-all text-left ${sel ? "border-white bg-white/25" : "border-white/15 bg-white/10 hover:bg-white/15"}`}>
+                      <button key={oi} onClick={() => { Haptics.selection(); setSelectedAnswers((p) => ({ ...p, [q.id]: oi })); }} className={`flex items-center gap-3.5 px-[18px] h-[68px] rounded-[32px] border-2 transition-all text-left ${sel ? "border-white bg-white/25" : "border-white/15 bg-white/10 hover:bg-white/15"}`}>
                         <span className={`w-8 h-8 rounded-full flex items-center justify-center font-sans font-semibold text-sm shrink-0 ${sel ? "bg-primary text-white" : "bg-white text-primary"}`}>{String.fromCharCode(65 + oi)}</span>
                         <span className="text-[15px] font-medium text-white leading-snug">{opt}</span>
                       </button>
@@ -353,7 +597,54 @@ export default function Home() {
                 </div>
                 <div className="flex gap-2.5 mt-auto pt-5">
                   {q.id > 1 && <button onClick={() => go(`q${q.id - 1}` as Screen)} className="px-5 h-[50px] bg-white/15 border border-white/20 rounded-[32px] text-[15px] font-semibold text-white">Back</button>}
-                  <button onClick={() => go(q.id < 15 ? `q${q.id + 1}` as Screen : "processing")} className="flex-1 h-[50px] bg-white text-primary rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.15)] flex items-center justify-center gap-2">
+                  <button
+                    onClick={async () => {
+                      if (q.id < 15) {
+                        go(`q${q.id + 1}` as Screen);
+                      } else {
+                        // Validate all 15 questions are answered
+                        const unanswered = Array.from({ length: 15 }, (_, i) => i + 1).filter(
+                          (qId) => selectedAnswers[qId] === undefined
+                        );
+                        if (unanswered.length > 0) {
+                          go(`q${unanswered[0]}` as Screen);
+                          return;
+                        }
+                        // Submit answers to /score endpoint
+                        Haptics.medium();
+                        go("processing");
+                        setIsSubmitting(true);
+                        setSubmitError(null);
+                        try {
+                          const answers = Array.from({ length: 15 }, (_, i) => {
+                            const answerIndex = selectedAnswers[i + 1]!;
+                            return String.fromCharCode(65 + answerIndex); // 0->A, 1->B, 2->C, 3->D
+                          });
+                          const res = await fetch("/api/score", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              user_id: user?.id ?? "",
+                              name: profile?.name ?? null,
+                              answers,
+                            }),
+                          });
+                          if (!res.ok) throw new Error("Failed to calculate scores");
+                          const data = await res.json();
+                          setOceanScores(data.big_five);
+                          Haptics.success();
+                          // Clear quiz progress after successful submission
+                          localStorage.removeItem('fincore_quiz_progress');
+                        } catch (err) {
+                          setSubmitError(err instanceof Error ? err.message : "Something went wrong");
+                        } finally {
+                          setIsSubmitting(false);
+                        }
+                      }
+                    }}
+                    disabled={selectedAnswers[q.id] === undefined}
+                    className={`flex-1 h-[50px] rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.15)] flex items-center justify-center gap-2 transition-opacity ${selectedAnswers[q.id] === undefined ? "bg-white/50 text-primary/50" : "bg-white text-primary"}`}
+                  >
                     {q.id < 15 ? "Next" : "See My Results"} <ArrowRight size={16} />
                   </button>
                 </div>
@@ -373,30 +664,91 @@ export default function Home() {
                   <div className="absolute inset-[38px] bg-white/10 backdrop-blur-[10px] rounded-full border border-white/15" />
                 </div>
                 <h2 className="font-sans text-2xl font-bold text-white mb-2">Analysing Your Mind</h2>
-                <p className="text-[15px] text-white/70 mb-8">Building your personalised psychological profile...</p>
+                <p className="text-[15px] text-white/70 mb-8">
+                  {submitError ? "Something went wrong..." : "Building your personalised psychological profile..."}
+                </p>
                 <div className="w-full text-left space-y-2.5">
-                  {["Mapping personality traits", "Calculating OCEAN scores", "Analysing financial behaviour", "Generating your profile", "Personalising Faith for you"].map((step, i) => (
-                    <div key={step} className={`flex items-center gap-3 text-sm font-medium ${i < 2 ? "text-white" : i === 2 ? "text-white" : "text-white/50"}`}>
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-[11px] shrink-0 ${i < 2 ? "bg-accent-green border-accent-green text-white" : i === 2 ? "border-accent animate-spin border-t-transparent" : "border-white/40"}`}>
-                        {i < 2 && <Check size={11} strokeWidth={3} />}
+                  {["Mapping personality traits", "Calculating OCEAN scores", "Analysing financial behaviour", "Generating your profile", "Personalising Faith for you"].map((step, i) => {
+                    const done = oceanScores !== null;
+                    const stepDone = done || (!isSubmitting && i < 2);
+                    const stepActive = isSubmitting && (i === 2 || (i < 2 && !stepDone));
+                    return (
+                      <div key={step} className={`flex items-center gap-3 text-sm font-medium ${stepDone ? "text-white" : stepActive ? "text-white" : "text-white/50"}`}>
+                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-[11px] shrink-0 ${
+                          stepDone ? "bg-accent-green border-accent-green text-white" :
+                          stepActive ? "border-accent animate-spin border-t-transparent" :
+                          "border-white/40"
+                        }`}>
+                          {stepDone && <Check size={11} strokeWidth={3} />}
+                        </div>
+                        {step}
                       </div>
-                      {step}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
+                {submitError && (
+                  <p className="mt-4 text-red-300 text-sm">{submitError}</p>
+                )}
+                {/* Preview skeleton of results card while processing */}
+                {!submitError && (
+                  <SkeletonProcessingPreview />
+                )}
               </div>
-              <div className="w-full pb-8 z-10">
-                <button onClick={() => go("results")} className="w-full h-[50px] bg-white text-primary rounded-[32px] text-[15px] font-bold shadow-[0_4px_16px_rgba(0,0,0,0.1)]">View Results</button>
+              <div className="w-full safe-bottom z-10 flex flex-col gap-2.5">
+                {submitError && (
+                  <button
+                    onClick={async () => {
+                      setIsSubmitting(true);
+                      setSubmitError(null);
+                      try {
+                        const answers = Array.from({ length: 15 }, (_, i) => {
+                          const answerIndex = selectedAnswers[i + 1]!;
+                          return String.fromCharCode(65 + answerIndex);
+                        });
+                        const res = await fetch("/api/score", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            user_id: user?.id ?? "",
+                            name: profile?.name ?? null,
+                            answers,
+                          }),
+                        });
+                        if (!res.ok) throw new Error("Failed to calculate scores");
+                        const data = await res.json();
+                        setOceanScores(data.big_five);
+                        // Clear quiz progress after successful submission
+                        localStorage.removeItem('fincore_quiz_progress');
+                      } catch (err) {
+                        setSubmitError(err instanceof Error ? err.message : "Something went wrong");
+                      } finally {
+                        setIsSubmitting(false);
+                      }
+                    }}
+                    className="w-full h-[50px] bg-white/15 border border-white/20 rounded-[32px] text-[15px] font-semibold text-white"
+                  >
+                    Try Again
+                  </button>
+                )}
+                <button
+                  onClick={() => go("results")}
+                  disabled={isSubmitting || !oceanScores}
+                  className={`w-full h-[50px] rounded-[32px] text-[15px] font-bold shadow-[0_4px_16px_rgba(0,0,0,0.1)] transition-opacity ${
+                    isSubmitting || !oceanScores ? "bg-white/50 text-primary/50" : "bg-white text-primary"
+                  }`}
+                >
+                  {isSubmitting ? "Calculating..." : "View Results"}
+                </button>
               </div>
             </div>
           )}
 
           {/* RESULTS */}
           {screen === "results" && (
-            <div className="min-h-full relative">
-              <div className="absolute inset-0 overflow-hidden"><BlueWaveBg id="results" animated /></div>
+            <div className="h-full overflow-y-auto overflow-x-hidden relative">
+              <div className="absolute inset-0 overflow-hidden pointer-events-none"><BlueWaveBg id="results" animated /></div>
               <div className="relative z-10 pb-[30px]">
-                <div className="relative z-[100] pt-[54px] px-5 pb-4">
+                <div className="relative z-[100] safe-top px-5 pb-4">
                   <h2 className="font-sans text-[28px] font-bold text-white leading-none tracking-tight">Your Profile</h2>
                   <p className="text-[12px] text-white/50 mt-1">OCEAN Personality Assessment</p>
                 </div>
@@ -405,35 +757,31 @@ export default function Home() {
                   <h3 className="font-sans text-[15px] font-bold text-text-primary mb-2">What is OCEAN?</h3>
                   <p className="text-[13px] text-text-secondary leading-relaxed">OCEAN is the gold-standard Big Five personality model used by psychologists worldwide. It measures five core traits &mdash; <strong>O</strong>penness, <strong>C</strong>onscientiousness, <strong>E</strong>xtraversion, <strong>A</strong>greeableness, and <strong>N</strong>euroticism &mdash; to understand how your personality shapes your financial decisions.</p>
                 </div>
-                {/* Scroll nudge */}
+                {/* OCEAN Trait Cards */}
                 <div className="bg-white/95 backdrop-blur-xl rounded-[28px] p-[22px] mx-4 mb-3.5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-                  {[
-                    { trait: "Openness", letter: "O", score: 72, desc: "Your high openness makes you naturally drawn to novelty.", tip: "Channel your love of new things into free experiences.", cost: "1,200", faith: "Faith will flag when novelty bias is driving a purchase." },
-                    { trait: "Conscientiousness", letter: "C", score: 45, desc: "Moderate conscientiousness means you sometimes plan and sometimes wing it.", tip: "Automate your finances with standing orders.", cost: "800", faith: "Faith will send gentle nudges." },
-                    { trait: "Extraversion", letter: "E", score: 81, desc: "Social situations energise you but can quietly drain your account.", tip: "Suggest free or cheaper social plans first.", cost: "1,800", faith: "Faith will track social spending patterns." },
-                    { trait: "Agreeableness", letter: "A", score: 63, desc: "You find it hard to say no \u2013 splitting bills, lending money, buying rounds.", tip: "Practice saying \u201CI\u2019ll get the next one.\u201D", cost: "600", faith: "Faith will help you set boundaries." },
-                    { trait: "Neuroticism", letter: "N", score: 38, desc: "You don\u2019t stress about money, but can overlook financial risks.", tip: "Set one review day per month.", cost: "400", faith: "Faith will schedule monthly check-ins." },
-                  ].map((t) => {
-                    const c = traitColors[t.trait];
-                    const open = openTraits.has(t.trait);
+                  {(["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"] as const).map((trait) => {
+                    const key = trait.toLowerCase() as keyof typeof oceanScores;
+                    const score = oceanScores?.[key] ?? 50;
+                    const c = traitColors[trait];
+                    const open = openTraits.has(trait);
+                    const desc = traitDescriptions[trait];
+                    const isHigh = score >= 60;
                     return (
-                      <div key={t.trait} className="mb-[18px] last:mb-0 cursor-pointer" onClick={() => setOpenTraits((prev) => { const n = new Set(prev); n.has(t.trait) ? n.delete(t.trait) : n.add(t.trait); return n; })}>
+                      <div key={trait} className="mb-[18px] last:mb-0 cursor-pointer" onClick={() => setOpenTraits((prev) => { const n = new Set(prev); n.has(trait) ? n.delete(trait) : n.add(trait); return n; })}>
                         <div className="flex justify-between items-center mb-2">
                           <div className="flex items-center gap-2 font-sans text-[15px] font-semibold text-text-primary">
-                            <span className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-white text-[13px] font-bold" style={{ background: `linear-gradient(135deg, ${c.from}, ${c.to})` }}>{t.letter}</span>
-                            {t.trait}
+                            <span className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-white text-[13px] font-bold" style={{ background: `linear-gradient(135deg, ${c.from}, ${c.to})` }}>{trait[0]}</span>
+                            {trait}
                           </div>
-                          <span className="text-[13px] font-semibold text-primary">{t.score}th</span>
+                          <span className="text-[13px] font-semibold text-primary">{score}th</span>
                         </div>
-                        <div className="h-2 bg-surface rounded overflow-hidden"><div className="h-full rounded transition-all duration-700" style={{ width: `${t.score}%`, background: `linear-gradient(90deg, ${c.from}, ${c.to})` }} /></div>
+                        <div className="h-2 bg-surface rounded overflow-hidden"><div className="h-full rounded transition-all duration-700" style={{ width: `${score}%`, background: `linear-gradient(90deg, ${c.from}, ${c.to})` }} /></div>
                         <div className="flex items-center gap-1 mt-2 text-xs text-primary font-semibold">See more <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} /></div>
                         {open && (
                           <div className="mt-3 p-4 bg-surface rounded-xl text-[13px] text-text-secondary leading-relaxed space-y-2">
-                            <p><strong>Score: {t.score}/100</strong></p>
-                            <p>{t.desc}</p>
-                            <p><strong>Tip:</strong> {t.tip}</p>
-                            <p><strong>Est. cost if unregulated:</strong> ~{"\u00A3"}{t.cost}/year</p>
-                            <p><strong>Faith:</strong> {t.faith}</p>
+                            <p><strong>Score: {score}/100</strong></p>
+                            <p>{isHigh ? desc.high : desc.low}</p>
+                            <p><strong>Tip:</strong> {desc.tip}</p>
                           </div>
                         )}
                       </div>
@@ -443,12 +791,22 @@ export default function Home() {
                 <div className="bg-white/95 backdrop-blur-xl rounded-[28px] p-[22px] mx-4 mb-3.5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
                   <h3 className="font-sans text-[15px] font-bold text-text-primary mb-3">How Faith Will Help You</h3>
                   <div className="p-4 bg-primary-ultra border-l-[3px] border-primary rounded-r-xl text-[13px] text-text-secondary leading-relaxed">
-                    Faith will adapt to your communication style, provide guardrails around social spending, and channel your openness into smarter choices.
+                    {insightsLoading ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-full bg-primary/10" />
+                        <Skeleton className="h-4 w-full bg-primary/10" />
+                        <Skeleton className="h-4 w-3/4 bg-primary/10" />
+                      </div>
+                    ) : faithInsights ? (
+                      faithInsights
+                    ) : (
+                      "Faith will adapt to your communication style and help you make better financial decisions."
+                    )}
                   </div>
                 </div>
-                <div className="px-5 flex flex-col gap-2.5 pb-8">
+                <div className="px-5 flex flex-col gap-2.5 safe-bottom">
                   <button className="w-full h-[50px] border-[1.5px] border-white/40 text-white rounded-[32px] text-[15px] font-semibold flex items-center justify-center gap-2 bg-white/10 backdrop-blur-sm"><Mail size={16} /> Email Results</button>
-                  <button onClick={() => goFromNav("scan")} className="w-full h-[50px] bg-white text-primary rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.1)]">Continue to App</button>
+                  <button onClick={() => { setHasCompletedOnboarding(true); goFromNav("scan"); }} className="w-full h-[50px] bg-white text-primary rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.1)]">Continue to App</button>
                 </div>
               </div>
             </div>
@@ -460,7 +818,7 @@ export default function Home() {
               <div className="absolute inset-0 overflow-hidden"><BlueWaveBg id="profile" animated /></div>
 
               {/* Fixed header */}
-              <div className="relative z-[25] pt-[54px] px-5 pb-2">
+              <div className="relative z-[25] safe-top px-5 pb-2">
                 <div className="flex items-start justify-between">
                   <div>
                     <h2 className="font-sans text-[28px] font-bold text-white leading-none tracking-tight">Your Profile</h2>
@@ -468,7 +826,7 @@ export default function Home() {
                   </div>
                   <button onClick={() => { setProfileAnimating(true); setProfileOpen(true); requestAnimationFrame(() => requestAnimationFrame(() => setProfileAnimating(false))); }} className="w-[38px] h-[38px] rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-[13px] font-semibold ring-[1.5px] ring-white/60 shrink-0 relative overflow-hidden mt-1">
                     <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-transparent rounded-full pointer-events-none" />
-                    JS
+                    {userInitials}
                   </button>
                 </div>
                 {/* Dot indicators */}
@@ -504,33 +862,29 @@ export default function Home() {
                       <p className="text-[13px] text-text-secondary leading-relaxed">OCEAN is the gold-standard Big Five personality model used by psychologists worldwide. It measures five core traits &mdash; <strong>O</strong>penness, <strong>C</strong>onscientiousness, <strong>E</strong>xtraversion, <strong>A</strong>greeableness, and <strong>N</strong>euroticism &mdash; to understand how your personality shapes your financial decisions.</p>
                     </div>
                     <div className="bg-white/95 backdrop-blur-xl rounded-[28px] p-[22px] mx-4 mb-3.5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-                      {[
-                        { trait: "Openness", letter: "O", score: 72, desc: "Your high openness makes you naturally drawn to novelty.", tip: "Channel your love of new things into free experiences.", cost: "1,200", faith: "Faith will flag when novelty bias is driving a purchase." },
-                        { trait: "Conscientiousness", letter: "C", score: 45, desc: "Moderate conscientiousness means you sometimes plan and sometimes wing it.", tip: "Automate your finances with standing orders.", cost: "800", faith: "Faith will send gentle nudges." },
-                        { trait: "Extraversion", letter: "E", score: 81, desc: "Social situations energise you but can quietly drain your account.", tip: "Suggest free or cheaper social plans first.", cost: "1,800", faith: "Faith will track social spending patterns." },
-                        { trait: "Agreeableness", letter: "A", score: 63, desc: "You find it hard to say no \u2013 splitting bills, lending money, buying rounds.", tip: "Practice saying \u201CI\u2019ll get the next one.\u201D", cost: "600", faith: "Faith will help you set boundaries." },
-                        { trait: "Neuroticism", letter: "N", score: 38, desc: "You don\u2019t stress about money, but can overlook financial risks.", tip: "Set one review day per month.", cost: "400", faith: "Faith will schedule monthly check-ins." },
-                      ].map((t) => {
-                        const c = traitColors[t.trait];
-                        const open = openTraits.has(t.trait);
+                      {(["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"] as const).map((trait) => {
+                        const key = trait.toLowerCase() as keyof typeof oceanScores;
+                        const score = oceanScores?.[key] ?? 50;
+                        const c = traitColors[trait];
+                        const open = openTraits.has(trait);
+                        const desc = traitDescriptions[trait];
+                        const isHigh = score >= 60;
                         return (
-                          <div key={t.trait} className="mb-[18px] last:mb-0 cursor-pointer" onClick={() => setOpenTraits((prev) => { const n = new Set(prev); n.has(t.trait) ? n.delete(t.trait) : n.add(t.trait); return n; })}>
+                          <div key={trait} className="mb-[18px] last:mb-0 cursor-pointer" onClick={() => setOpenTraits((prev) => { const n = new Set(prev); n.has(trait) ? n.delete(trait) : n.add(trait); return n; })}>
                             <div className="flex justify-between items-center mb-2">
                               <div className="flex items-center gap-2 font-sans text-[15px] font-semibold text-text-primary">
-                                <span className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-white text-[13px] font-bold" style={{ background: `linear-gradient(135deg, ${c.from}, ${c.to})` }}>{t.letter}</span>
-                                {t.trait}
+                                <span className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-white text-[13px] font-bold" style={{ background: `linear-gradient(135deg, ${c.from}, ${c.to})` }}>{trait[0]}</span>
+                                {trait}
                               </div>
-                              <span className="text-[13px] font-semibold text-primary">{t.score}th</span>
+                              <span className="text-[13px] font-semibold text-primary">{score}th</span>
                             </div>
-                            <div className="h-2 bg-surface rounded overflow-hidden"><div className="h-full rounded transition-all duration-700" style={{ width: `${t.score}%`, background: `linear-gradient(90deg, ${c.from}, ${c.to})` }} /></div>
+                            <div className="h-2 bg-surface rounded overflow-hidden"><div className="h-full rounded transition-all duration-700" style={{ width: `${score}%`, background: `linear-gradient(90deg, ${c.from}, ${c.to})` }} /></div>
                             <div className="flex items-center gap-1 mt-2 text-xs text-primary font-semibold">See more <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} /></div>
                             {open && (
                               <div className="mt-3 p-4 bg-surface rounded-xl text-[13px] text-text-secondary leading-relaxed space-y-2">
-                                <p><strong>Score: {t.score}/100</strong></p>
-                                <p>{t.desc}</p>
-                                <p><strong>Tip:</strong> {t.tip}</p>
-                                <p><strong>Est. cost if unregulated:</strong> ~{"\u00A3"}{t.cost}/year</p>
-                                <p><strong>Faith:</strong> {t.faith}</p>
+                                <p><strong>Score: {score}/100</strong></p>
+                                <p>{isHigh ? desc.high : desc.low}</p>
+                                <p><strong>Tip:</strong> {desc.tip}</p>
                               </div>
                             )}
                           </div>
@@ -540,8 +894,48 @@ export default function Home() {
                     <div className="bg-white/95 backdrop-blur-xl rounded-[28px] p-[22px] mx-4 mb-3.5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
                       <h3 className="font-sans text-[15px] font-bold text-text-primary mb-3">How Faith Will Help You</h3>
                       <div className="p-4 bg-primary-ultra border-l-[3px] border-primary rounded-r-xl text-[13px] text-text-secondary leading-relaxed">
-                        Faith will adapt to your communication style, provide guardrails around social spending, and channel your openness into smarter choices.
+                        {insightsLoading ? (
+                          <div className="space-y-2">
+                            <Skeleton className="h-4 w-full bg-primary/10" />
+                            <Skeleton className="h-4 w-full bg-primary/10" />
+                            <Skeleton className="h-4 w-3/4 bg-primary/10" />
+                          </div>
+                        ) : faithInsights ? (
+                          faithInsights
+                        ) : (
+                          "Faith will adapt to your communication style and help you make better financial decisions."
+                        )}
                       </div>
+                    </div>
+                    {/* Financial Health Card */}
+                    <div className="bg-white/95 backdrop-blur-xl rounded-[28px] p-[22px] mx-4 mb-3.5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-white text-[13px] font-bold bg-gradient-to-br from-accent-warm to-accent-red">
+                          <BarChart3 size={14} />
+                        </div>
+                        <h3 className="font-sans text-[15px] font-bold text-text-primary">Financial Health</h3>
+                      </div>
+                      {emotionalTaxLoading ? (
+                        <SkeletonFinancialHealth />
+                      ) : emotionalTax && emotionalTax.scan_count > 0 ? (
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-[13px] text-text-secondary">Emotional Tax This Month</span>
+                            <span className="text-[20px] font-bold text-accent-red">{"£"}{emotionalTax.total_tax.toFixed(2)}</span>
+                          </div>
+                          <div className="h-1.5 bg-surface rounded-full overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-accent-warm to-accent-red rounded-full transition-all duration-700" style={{ width: `${Math.min(emotionalTax.total_tax * 2, 100)}%` }} />
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[12px] text-text-tertiary">
+                            <ShoppingBag size={12} />
+                            <span>Based on {emotionalTax.scan_count} scanned product{emotionalTax.scan_count !== 1 ? "s" : ""}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[13px] text-text-tertiary">
+                          Scan products to see your emotional spending patterns
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -585,31 +979,35 @@ export default function Home() {
                     <Lock size={48} className="text-primary mb-3" fill="#005FCC" />
                     <h4 className="text-[20px] font-bold text-text-primary mb-1">Blueprint</h4>
                     <p className="text-[14px] text-text-secondary mb-5 max-w-[260px]">See the full context behind your spending patterns and get a personalised action plan</p>
-                    <button className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Upgrade to Unlock</button>
+                    <button onClick={() => setComingSoonModal({ open: true, feature: 'blueprint' })} className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Join Waitlist</button>
                   </div>
                 </>
               )}
 
               {/* Navbar — same structure as Faith/Scan */}
-              <div className="relative z-30 pb-8 pt-2 px-5">
+              <div className="relative z-30 safe-bottom pt-2 px-5">
                 <div className="liquid-glass rounded-[32px] flex items-center justify-between px-2 h-[50px] relative">
                   <button className="flex flex-col items-center justify-center w-[56px]">
                     <Brain size={18} className="text-white" />
                     <span className="text-[9px] text-white mt-0.5 font-semibold">Profile</span>
                   </button>
-                  <button onClick={() => goFromNav("faith")} className="flex flex-col items-center justify-center w-[56px]">
-                    <MessageCircle size={18} className="text-white/70" />
-                    <span className="text-[9px] text-white/50 mt-0.5">Faith</span>
+                  <button onClick={() => goToFaithFromNav()} className="flex flex-col items-center justify-center w-[56px]">
+                    {hasOceanScores ? (
+                      <MessageCircle size={18} className="text-white/70" />
+                    ) : (
+                      <Lock size={18} className="text-white/40" />
+                    )}
+                    <span className="text-[9px] text-white/50 mt-0.5">{hasOceanScores ? "Faith" : "Locked"}</span>
                   </button>
                   <button onClick={() => goFromNav("scan")} className="flex flex-col items-center justify-center w-[56px]">
                     <Camera size={18} className="text-white/70" />
                     <span className="text-[9px] text-white/50 mt-0.5">Feels Like</span>
                   </button>
-                  <button onClick={() => goFromNav("banking")} className="flex flex-col items-center justify-center w-[56px]">
+                  <button onClick={() => setComingSoonModal({ open: true, feature: 'banking' })} className="flex flex-col items-center justify-center w-[56px]">
                     <Landmark size={18} className="text-white/70" />
                     <span className="text-[9px] text-white/50 mt-0.5">Banking</span>
                   </button>
-                  <button onClick={() => goFromNav("analytics")} className="flex flex-col items-center justify-center w-[56px]">
+                  <button onClick={() => setComingSoonModal({ open: true, feature: 'analytics' })} className="flex flex-col items-center justify-center w-[56px]">
                     <BarChart3 size={18} className="text-white/70" />
                     <span className="text-[9px] text-white/50 mt-0.5">Analytics</span>
                   </button>
@@ -619,26 +1017,30 @@ export default function Home() {
           )}
 
           {/* USER PROFILE */}
-          <div className={`absolute inset-0 z-[1001] flex flex-col overflow-y-auto hide-scrollbar`} style={{ transform: profileOpen && !profileAnimating ? "translateX(0)" : "translateX(100%)", transition: profileAnimating ? "none" : "transform 350ms cubic-bezier(0.32, 0.72, 0, 1)", pointerEvents: profileOpen ? "auto" : "none" }}>
+          <div className={`absolute inset-0 z-[1001] flex flex-col bg-[#1a6bc7]`} style={{ transform: profileOpen && !profileAnimating ? "translateX(0)" : "translateX(100%)", transition: profileAnimating ? "none" : "transform 350ms cubic-bezier(0.32, 0.72, 0, 1)", pointerEvents: profileOpen ? "auto" : "none" }}>
               <div className="absolute inset-0 overflow-hidden z-0"><BlueWaveBg id="user-prof" animated /></div>
-              <div className="relative z-10 pb-10 flex-1 flex flex-col justify-center">
-                {/* Close button — matches header plus button */}
-                <button onClick={() => setProfileOpen(false)} className="absolute top-[57px] left-5 w-[38px] h-[38px] rounded-full bg-white/10 border border-white/15 flex items-center justify-center hover:bg-white/20 transition-colors z-20">
+
+              {/* Close button - fixed position */}
+              <div className="relative z-20 safe-top px-5">
+                <button onClick={() => setProfileOpen(false)} className="w-[38px] h-[38px] rounded-full bg-white/10 border border-white/15 flex items-center justify-center hover:bg-white/20 transition-colors">
                   <ArrowRight size={16} className="text-white rotate-180" />
                 </button>
+              </div>
 
+              {/* Scrollable content */}
+              <div className="relative z-10 flex-1 overflow-y-auto hide-scrollbar">
                 {/* Header */}
-                <div className="pt-[100px] pb-4 flex flex-col items-center">
+                <div className="pt-6 pb-6 flex flex-col items-center">
                   <div className="w-[90px] h-[90px] rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-[32px] font-bold font-sans shadow-[0_4px_20px_rgba(0,95,204,0.3)] ring-[2px] ring-white/80 mb-3 relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-transparent rounded-full pointer-events-none" />
-                    JS
+                    {userInitials}
                   </div>
-                  <h2 className="font-sans text-[22px] font-bold text-white tracking-tight">John Smith</h2>
-                  <p className="text-[14px] text-white/40 mt-0.5">john.smith@email.com</p>
+                  <h2 className="font-sans text-[22px] font-bold text-white tracking-tight">{profile?.name ?? "Guest"}</h2>
+                  <p className="text-[14px] text-white/40 mt-0.5">{profile?.email ?? "No email"}</p>
                 </div>
 
                 {/* Menu sections */}
-                <div className="mx-4 space-y-3">
+                <div className="mx-4 space-y-3 pb-8">
                   {/* Account */}
                   <div className="bg-white/8 rounded-[20px] border border-white/10 overflow-hidden">
                     {[
@@ -686,193 +1088,34 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
+
+                {/* Safe area bottom spacer */}
+                <div className="safe-bottom" />
               </div>
           </div>
 
-          {/* FAITH CHAT */}
+          {/* FAITH CHAT — live SSE-streamed AI coach */}
           {screen === "faith" && (
             <div className="h-full flex flex-col relative overflow-hidden">
+              {/* Animated wave background (preserved from design system) */}
               <div className="absolute inset-0 overflow-hidden"><BlueWaveBg id="faith" animated /></div>
-
-              {/* Chat header */}
-              <div className="relative z-10 pt-[54px] px-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <button onClick={() => { setDrawerSource("faith"); setDrawerOpen(true); }} className="w-[42px] h-[42px] rounded-full flex items-center justify-center hover:bg-white/10 transition-colors shrink-0">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>
-                  </button>
-                  <h2 className="flex-1 font-sans text-[28px] font-bold text-white leading-none tracking-tight">Faith</h2>
-                  <button onClick={() => { setProfileAnimating(true); setProfileOpen(true); requestAnimationFrame(() => requestAnimationFrame(() => setProfileAnimating(false))); }} className="w-[38px] h-[38px] rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-[13px] font-semibold ring-[1.5px] ring-white/60 shrink-0 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-transparent rounded-full pointer-events-none" />
-                    JS
-                  </button>
-                </div>
-                <p className="text-[12px] text-white/50 ml-[55px] -mt-0.5">Your financial AI companion</p>
-              </div>
-
-              {/* Messages area */}
-              <div className="flex-1 overflow-y-auto px-4 pb-4 relative z-10 space-y-4 hide-scrollbar" style={{ maskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 60px), transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 60px), transparent 100%)" }}>
-
-                {/* Date divider */}
-                <div className="flex items-center justify-center py-2">
-                  <span className="text-[11px] font-medium text-white/80 bg-white/15 backdrop-blur-sm px-3 py-1 rounded-full">Today</span>
-                </div>
-
-                {/* User message — weekend spending question */}
-                <div className="flex justify-end">
-                  <div className="max-w-[75%]">
-                    <div className="bg-primary rounded-[18px] rounded-br-[4px] px-4 py-3 shadow-[0_1px_6px_rgba(0,95,204,0.2)]">
-                      <p className="text-[14px] text-white leading-relaxed">Why do I spend so much on weekends?</p>
-                    </div>
-                    <span className="text-[10px] text-white/35 mt-1 mr-2 block text-right">9:31 AM</span>
-                  </div>
-                </div>
-
-                {/* Faith message */}
-                <div className="flex gap-2.5 items-end">
-                  <div className="w-[28px] h-[28px] rounded-full bg-gradient-to-br from-accent to-primary flex items-center justify-center shrink-0 shadow-sm">
-                    <span className="text-white text-[14px] font-bold leading-none">F</span>
-                  </div>
-                  <div className="max-w-[75%]">
-                    <div className="bg-white/95 backdrop-blur-xl rounded-[18px] rounded-bl-[4px] px-4 py-3 shadow-[0_1px_6px_rgba(0,0,0,0.06)] border border-white/80">
-                      <p className="text-[14px] text-text-primary leading-relaxed">Good morning, John! 👋</p>
-                      <p className="text-[14px] text-text-primary leading-relaxed mt-1.5">Based on your <strong>high Extraversion</strong> score, I noticed you tend to spend more on social activities at weekends. Want me to help you set a social budget?</p>
-                    </div>
-                    <span className="text-[10px] text-white/35 mt-1 ml-2 block">9:32 AM</span>
-                  </div>
-                </div>
-
-                {/* User message */}
-                <div className="flex justify-end">
-                  <div className="max-w-[75%]">
-                    <div className="bg-primary rounded-[18px] rounded-br-[4px] px-4 py-3 shadow-[0_1px_6px_rgba(0,95,204,0.2)]">
-                      <p className="text-[14px] text-white leading-relaxed">Yeah that would be great! How much am I actually spending?</p>
-                    </div>
-                    <span className="text-[10px] text-white/35 mt-1 mr-2 block text-right">9:33 AM</span>
-                  </div>
-                </div>
-
-                {/* Faith message with insight card */}
-                <div className="flex gap-2.5 items-end">
-                  <div className="w-[28px] h-[28px] rounded-full bg-gradient-to-br from-accent to-primary flex items-center justify-center shrink-0 shadow-sm">
-                    <span className="text-white text-[14px] font-bold leading-none">F</span>
-                  </div>
-                  <div className="max-w-[80%]">
-                    <div className="bg-white/95 backdrop-blur-xl rounded-[18px] rounded-bl-[4px] px-4 py-3 shadow-[0_1px_6px_rgba(0,0,0,0.06)] border border-white/80">
-                      <p className="text-[14px] text-text-primary leading-relaxed">Here&apos;s your social spending breakdown for March:</p>
-                      {/* Insight card */}
-                      <div className="mt-3 bg-primary-ultra rounded-2xl p-3.5 border border-primary/10">
-                        <div className="flex items-center gap-2 mb-2.5">
-                          <div className="w-[22px] h-[22px] rounded-md bg-primary/10 flex items-center justify-center">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-primary"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>
-                          </div>
-                          <span className="text-[12px] font-bold text-primary">Social Spending — March</span>
-                        </div>
-                        <div className="space-y-2">
-                          {[
-                            { label: "Dining out", amount: "£187", pct: 45 },
-                            { label: "Drinks & bars", amount: "£124", pct: 30 },
-                            { label: "Events & tickets", amount: "£68", pct: 16 },
-                            { label: "Other social", amount: "£37", pct: 9 },
-                          ].map((item) => (
-                            <div key={item.label}>
-                              <div className="flex justify-between text-[12px] mb-0.5">
-                                <span className="text-text-secondary">{item.label}</span>
-                                <span className="font-semibold text-text-primary">{item.amount}</span>
-                              </div>
-                              <div className="h-1.5 bg-primary/10 rounded-full overflow-hidden">
-                                <div className="h-full bg-gradient-to-r from-primary to-accent rounded-full" style={{ width: `${item.pct}%` }} />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="flex justify-between items-center mt-3 pt-2.5 border-t border-primary/10">
-                          <span className="text-[12px] font-bold text-text-primary">Total</span>
-                          <span className="text-[15px] font-bold text-primary">£416</span>
-                        </div>
-                      </div>
-                      <p className="text-[14px] text-text-primary leading-relaxed mt-3">That&apos;s <strong>23% above</strong> your average. I&apos;d suggest a weekly cap of £80. Shall I set that up?</p>
-                    </div>
-                    <span className="text-[10px] text-white/35 mt-1 ml-2 block">9:33 AM</span>
-                  </div>
-                </div>
-
-                {/* Quick reply suggestions */}
-                <div className="flex gap-2 flex-wrap pl-[38px]">
-                  {["Yes, set it up", "Show me more detail", "Maybe later"].map((reply) => (
-                    <button key={reply} className="px-3.5 py-2 bg-white/90 backdrop-blur-sm rounded-full text-[13px] font-medium text-primary border border-white/80 shadow-sm hover:bg-white transition-colors">
-                      {reply}
-                    </button>
-                  ))}
-                </div>
-
-              </div>
-
-              {/* Input bar — GPT style */}
-              <div className="relative z-10 pb-8 pt-2 px-5">
-                <div className="relative h-[50px]">
-                  {/* Navbar — slides in from left */}
-                  <div
-                    className={`absolute inset-0 liquid-glass rounded-[32px] flex items-center justify-between px-2 transition-all duration-500 ease-out ${navExpanded ? "translate-x-0 opacity-100 z-20" : "-translate-x-full opacity-0 z-0 pointer-events-none"}`}
-                    onTouchStart={(e) => { (e.currentTarget as HTMLElement).dataset.swipeX = String(e.touches[0].clientX); }}
-                    onTouchEnd={(e) => { const diff = e.changedTouches[0].clientX - Number((e.currentTarget as HTMLElement).dataset.swipeX); if (diff < -60) setNavExpanded(false); }}
-                    onMouseDown={(e) => { (e.currentTarget as HTMLElement).dataset.swipeX = String(e.clientX); }}
-                    onMouseUp={(e) => { const diff = e.clientX - Number((e.currentTarget as HTMLElement).dataset.swipeX); if (diff < -60) setNavExpanded(false); }}
-                  >
-                    <button onClick={() => { goFromNav("profile"); }} className="flex flex-col items-center justify-center w-[56px]">
-                      <Brain size={18} className="text-white/70" />
-                      <span className="text-[9px] text-white/50 mt-0.5">Profile</span>
-                    </button>
-                    <button onClick={() => { goFromNav("faith"); }} className="flex flex-col items-center justify-center w-[56px]">
-                      <MessageCircle size={18} className="text-white" />
-                      <span className="text-[9px] text-white mt-0.5 font-semibold">Faith</span>
-                    </button>
-                    <button onClick={() => { goFromNav("scan"); }} className="flex flex-col items-center justify-center w-[56px]">
-                      <Camera size={18} className="text-white/70" />
-                      <span className="text-[9px] text-white/50 mt-0.5">Feels Like</span>
-                    </button>
-                    <button onClick={() => goFromNav("banking")} className="flex flex-col items-center justify-center w-[56px]">
-                      <Landmark size={18} className="text-white/70" />
-                      <span className="text-[9px] text-white/50 mt-0.5">Banking</span>
-                    </button>
-                    <button onClick={() => goFromNav("analytics")} className="flex flex-col items-center justify-center w-[56px]">
-                      <BarChart3 size={18} className="text-white/70" />
-                      <span className="text-[9px] text-white/50 mt-0.5">Analytics</span>
-                    </button>
-                    <button onClick={() => setNavExpanded(false)} className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center w-[16px]">
-                      <ChevronRight size={14} className="text-white/30" />
-                    </button>
-                  </div>
-                  {/* Input bar */}
-                  <div className={`absolute inset-0 flex items-center transition-all duration-500 ease-out ${navExpanded ? "translate-x-full opacity-0 pointer-events-none" : "translate-x-0 opacity-100"} ${faithFocused ? "gap-0" : "gap-2"}`}>
-                    {/* Home button — collapses when focused */}
-                    <div className={`shrink-0 overflow-hidden transition-all duration-400 ease-out ${faithFocused ? "w-0 opacity-0" : "w-[42px] opacity-100"}`}>
-                      <button onClick={() => setNavExpanded(true)} className="w-[42px] h-[42px] rounded-full liquid-glass flex items-center justify-center">
-                        <HomeIcon size={18} className="text-white" />
-                      </button>
-                    </div>
-                    <div onClick={() => !faithFocused && setFaithFocused(true)} className="flex-1 liquid-glass rounded-[32px] flex items-center pl-2 pr-1.5 py-1.5 h-[50px] cursor-text">
-                      {/* Plus inside — only when focused */}
-                      <div className={`shrink-0 overflow-hidden transition-all duration-400 ease-out ${faithFocused ? "w-[36px] min-w-[36px] mr-1 opacity-100" : "w-0 min-w-0 mr-0 opacity-0"}`}>
-                        <button onClick={(e) => { e.stopPropagation(); setFaithFocused(false); }} className="w-[36px] h-[36px] rounded-full bg-white/0 flex items-center justify-center">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                        </button>
-                      </div>
-                      {!faithFocused && <div className="w-2" />}
-                      {faithFocused ? (
-                        <input autoFocus onBlur={() => setFaithFocused(false)} className="text-[15px] text-white flex-1 leading-snug bg-transparent outline-none placeholder:text-white/50" placeholder="Ask Faith anything..." />
-                      ) : (
-                        <span className="text-[15px] text-white/50 flex-1 leading-snug">Ask Faith anything...</span>
-                      )}
-                      <button className="w-[28px] h-[28px] flex items-center justify-center shrink-0 ml-1">
-                        <Mic size={18} className="text-white/50" fill="rgba(255,255,255,0.5)" />
-                      </button>
-                      <button className="w-[36px] h-[36px] rounded-full bg-primary flex items-center justify-center shrink-0 ml-1">
-                        <Send size={14} className="text-white" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* Live chat component — connects to POST /chat SSE stream */}
+              <ChatScreen
+                userId={user?.id ?? ""}
+                onMenuOpen={() => { setDrawerSource("faith"); setDrawerOpen(true); }}
+                onHome={() => go("profile")}
+                userInitials={userInitials}
+                scanContext={pendingScanContext}
+                onNavigateProfile={() => go("profile")}
+                onNavigateScan={() => go("scan")}
+                onNavigateBanking={() => setComingSoonModal({ open: true, feature: "banking" })}
+                onNavigateAnalytics={() => setComingSoonModal({ open: true, feature: "analytics" })}
+                hasOceanScores={!!oceanScores}
+                activeSessionId={activeSessionId}
+                onNewSession={handleChatNewSession}
+                onAvatarClick={() => { setProfileAnimating(true); setProfileOpen(true); requestAnimationFrame(() => requestAnimationFrame(() => setProfileAnimating(false))); }}
+                onNewChat={() => setActiveSessionId(null)}
+              />
             </div>
           )}
 
@@ -888,11 +1131,18 @@ export default function Home() {
               <div className="flex-1 flex flex-col items-center justify-center px-5 relative z-10">
                 {/* Scan viewfinder — dark window inside */}
                 <div className="relative w-[300px] h-[320px] mb-8">
-                  {/* Dark camera area inside the brackets */}
-                  <div className="absolute inset-[10px] rounded-[18px] bg-[#0d1520]/85 backdrop-blur-sm" />
+                  {/* Live camera feed */}
+                  <video
+                    ref={scan.videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="absolute inset-[10px] rounded-[18px] w-[calc(100%-20px)] h-[calc(100%-20px)] object-cover bg-[#0d1520]"
+                  />
+                  <canvas ref={scan.canvasRef} className="hidden" />
 
-                  {/* Center crosshair — tap to simulate scan */}
-                  <div className="absolute inset-0 flex items-center justify-center cursor-pointer" onClick={() => go("scan-result")}>
+                  {/* Crosshair — visual only */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="w-[60px] h-[60px] border-2 border-white/20 rounded-xl" />
                   </div>
 
@@ -910,15 +1160,65 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* Instructions */}
-                <h2 className="font-sans text-[22px] font-bold text-white tracking-tight mb-2 text-center max-w-[280px]">Scan to start making better financial decisions.</h2>
-                <p className="text-[13px] text-white/40 leading-relaxed text-center max-w-[280px]">Point your camera at a barcode or QR code to see what it really costs you.</p>
+                {/* Capture button + instructions */}
+                <div className="flex flex-col items-center gap-4">
+                  <button
+                    onClick={async () => {
+                      Haptics.medium();
+                      const result = await scan.captureAndAnalyse();
+                      if (result) {
+                        setScanAnalysis(result);
+                        setScanPreview(scan.getPreviewUrl());
+                        const price = result.estimated_price ?? null;
+                        setScanPrice(price);
+                        setEditingPrice(price !== null ? price.toFixed(2) : "");
+                        if (profile?.big_five && price !== null) {
+                          fetchPsychologyCost(price);
+                        }
+                        go("scan-result");
+                      }
+                    }}
+                    disabled={scan.isAnalysing}
+                    className="relative w-[72px] h-[72px] rounded-full bg-white shadow-[0_0_0_8px_rgba(255,255,255,0.15),0_8px_32px_rgba(0,95,204,0.35)] flex items-center justify-center transition-transform active:scale-95 disabled:opacity-70"
+                  >
+                    <div className="absolute inset-[8px] rounded-full bg-primary/10" />
+                    {scan.isAnalysing ? (
+                      <div className="w-[32px] h-[32px] rounded-full border-[3px] border-primary/30 border-t-primary animate-spin" />
+                    ) : (
+                      <Camera size={28} className="text-primary relative z-10" />
+                    )}
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <p className="text-[13px] text-white/50">Tap to scan</p>
+                    <span className="text-white/20 text-[11px]">·</span>
+                    <label className="text-[13px] text-white/50 cursor-pointer underline underline-offset-2">
+                      upload photo
+                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const result = await scan.uploadAndAnalyse(file);
+                        if (result) {
+                          setScanAnalysis(result);
+                          setScanPreview(scan.getPreviewUrl());
+                          const price = result.estimated_price ?? null;
+                          setScanPrice(price);
+                          setEditingPrice(price !== null ? price.toFixed(2) : "");
+                          if (profile?.big_five && price !== null) {
+                            fetchPsychologyCost(price);
+                          }
+                          go("scan-result");
+                        }
+                        e.target.value = "";
+                      }} />
+                    </label>
+                  </div>
+                </div>
 
               </div>
 
               {/* Manual entry input — pinned to bottom */}
               {/* Input bar — GPT style */}
-              <div className="relative z-10 pb-8 pt-2 px-5">
+              <div className="relative z-10 safe-bottom pt-2 px-5">
                 <div className="relative h-[50px]">
                   {/* Navbar — slides in from left */}
                   <div
@@ -932,19 +1232,23 @@ export default function Home() {
                       <Brain size={18} className="text-white/70" />
                       <span className="text-[9px] text-white/50 mt-0.5">Profile</span>
                     </button>
-                    <button onClick={() => { goFromNav("faith"); }} className="flex flex-col items-center justify-center w-[56px]">
-                      <MessageCircle size={18} className="text-white/70" />
-                      <span className="text-[9px] text-white/50 mt-0.5">Faith</span>
+                    <button onClick={() => { goToFaithFromNav(); }} className="flex flex-col items-center justify-center w-[56px]">
+                      {hasOceanScores ? (
+                        <MessageCircle size={18} className="text-white/70" />
+                      ) : (
+                        <Lock size={18} className="text-white/40" />
+                      )}
+                      <span className="text-[9px] text-white/50 mt-0.5">{hasOceanScores ? "Faith" : "Locked"}</span>
                     </button>
                     <button onClick={() => { goFromNav("scan"); }} className="flex flex-col items-center justify-center w-[56px]">
                       <Camera size={18} className="text-white" />
                       <span className="text-[9px] text-white mt-0.5 font-semibold">Feels Like</span>
                     </button>
-                    <button onClick={() => goFromNav("banking")} className="flex flex-col items-center justify-center w-[56px]">
+                    <button onClick={() => setComingSoonModal({ open: true, feature: 'banking' })} className="flex flex-col items-center justify-center w-[56px]">
                       <Landmark size={18} className="text-white/70" />
                       <span className="text-[9px] text-white/50 mt-0.5">Banking</span>
                     </button>
-                    <button onClick={() => goFromNav("analytics")} className="flex flex-col items-center justify-center w-[56px]">
+                    <button onClick={() => setComingSoonModal({ open: true, feature: 'analytics' })} className="flex flex-col items-center justify-center w-[56px]">
                       <BarChart3 size={18} className="text-white/70" />
                       <span className="text-[9px] text-white/50 mt-0.5">Analytics</span>
                     </button>
@@ -973,9 +1277,20 @@ export default function Home() {
                       ) : (
                         <span className="text-[15px] text-white/50 flex-1 leading-snug">Enter Manually</span>
                       )}
-                      <button className="w-[28px] h-[28px] flex items-center justify-center shrink-0 ml-1">
+                      <label className="w-[28px] h-[28px] flex items-center justify-center shrink-0 ml-1 cursor-pointer">
                         <Mic size={18} className="text-white/50" fill="rgba(255,255,255,0.5)" />
-                      </button>
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const result = await scan.uploadAndAnalyse(file);
+                          if (result) {
+                            setScanAnalysis(result);
+                            setScanPreview(scan.getPreviewUrl());
+                            go("scan-result");
+                          }
+                          e.target.value = "";
+                        }} />
+                      </label>
                       <button className="w-[36px] h-[36px] rounded-full bg-primary flex items-center justify-center shrink-0 ml-1">
                         <Send size={14} className="text-white" />
                       </button>
@@ -993,35 +1308,68 @@ export default function Home() {
               <div className="absolute inset-0 overflow-hidden"><BlueWaveBg id="scan-res" animated /></div>
 
               {/* Header */}
-              <div className="relative z-10 pt-[54px] px-5 pb-4">
+              <div className="relative z-10 safe-top px-5 pb-4">
                 <div className="flex items-center gap-3">
-                  <button onClick={() => goFromNav("scan")} className="w-[42px] h-[42px] rounded-full flex items-center justify-center hover:bg-white/10 transition-colors shrink-0">
+                  <button onClick={() => { scan.clearResult(); setScanAnalysis(null); setScanPreview(null); goFromNav("scan"); }} className="w-[42px] h-[42px] rounded-full flex items-center justify-center hover:bg-white/10 transition-colors shrink-0">
                     <ArrowRight size={20} className="text-white rotate-180" />
                   </button>
                   <h2 className="flex-1 font-sans text-[28px] font-bold text-white leading-none tracking-tight">Feels Like</h2>
                   <button onClick={() => { setProfileAnimating(true); setProfileOpen(true); requestAnimationFrame(() => requestAnimationFrame(() => setProfileAnimating(false))); }} className="w-[38px] h-[38px] rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-[13px] font-semibold ring-[1.5px] ring-white/60 shrink-0 relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-transparent rounded-full pointer-events-none" />
-                    JS
+                    {userInitials}
                   </button>
                 </div>
               </div>
 
               {/* Scrollable content */}
-              <div className="flex-1 overflow-y-auto hide-scrollbar px-5 pb-8 relative z-10">
+              <div className="flex-1 overflow-y-auto hide-scrollbar px-5 safe-bottom relative z-10">
 
                 {/* Product card */}
                 <div className="bg-white/95 backdrop-blur-xl rounded-[20px] p-4 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] mb-4">
                   <div className="flex gap-4">
                     <div className="w-[90px] h-[90px] rounded-[14px] bg-surface flex items-center justify-center shrink-0 overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src="/coca-cola.png" alt="Coca-Cola" className="w-full h-full object-cover" />
+                      {scanPreview ? (
+                        // Local DataURL is always the primary source - instant and reliable
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={scanPreview}
+                          alt="Scanned product"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : scan.isAnalysing ? (
+                        <Skeleton className="w-full h-full rounded-[14px] bg-gray-200" />
+                      ) : (
+                        <div className="w-full h-full bg-surface flex items-center justify-center">
+                          <Camera size={32} className="text-gray-300" />
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 flex flex-col justify-center">
-                      <h3 className="text-[17px] font-bold text-text-primary leading-tight">Coca-Cola Original</h3>
-                      <p className="text-[13px] text-text-tertiary mt-0.5">330ml Can • Tesco</p>
+                      {scan.isAnalysing && !scanAnalysis ? (
+                        <div className="space-y-2 py-2">
+                          <Skeleton className="h-5 w-3/4 bg-gray-200" />
+                          <Skeleton className="h-4 w-1/2 bg-gray-200" />
+                        </div>
+                      ) : (
+                        <>
+                          <h3 className="text-[17px] font-bold text-text-primary leading-tight">{scanAnalysis?.product_identified ?? "Scanned Product"}</h3>
+                          <p className="text-[13px] text-text-tertiary mt-0.5">{scanAnalysis ? `Score ${scanAnalysis.overall_score}/100 · Grade ${scanAnalysis.grade}` : "Analysing..."}</p>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
+
+                {/* AI Verdict banner */}
+                {scanAnalysis && (
+                  <div className={`mb-4 p-4 rounded-[20px] border text-center font-semibold text-[14px] ${
+                    scanAnalysis.color === "green" ? "bg-green-50 border-green-200 text-green-800" :
+                    scanAnalysis.color === "red" ? "bg-red-50 border-red-200 text-red-800" :
+                    "bg-amber-50 border-amber-200 text-amber-800"
+                  }`}>
+                    {scanAnalysis.verdict}
+                  </div>
+                )}
 
                 {/* Price section */}
                 <div className="mb-4">
@@ -1031,33 +1379,83 @@ export default function Home() {
                         <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wider block mb-1">Actual Price</span>
                         <div className="flex items-center gap-0.5">
                           <span className="text-[32px] font-bold text-text-primary">{"\u00A3"}</span>
-                          <input autoFocus defaultValue="1.00" className="text-[32px] font-bold text-text-primary leading-tight w-[90px] bg-transparent outline-none border-b-2 border-primary" />
+                          <input
+                            autoFocus
+                            value={editingPrice}
+                            onChange={(e) => setEditingPrice(e.target.value.replace(/[^\d.]/g, ""))}
+                            className="text-[32px] font-bold text-text-primary leading-tight w-[90px] bg-transparent outline-none border-b-2 border-primary"
+                          />
                         </div>
                         <span className="text-[12px] text-primary font-semibold mt-0.5 block">press Update to save</span>
                       </div>
                       <div className="flex flex-col gap-2 shrink-0">
-                        <button onClick={() => setPriceEditing(false)} className="h-[38px] px-5 rounded-[32px] bg-primary text-[13px] font-semibold text-white shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Update</button>
-                        <button onClick={() => setPriceEditing(false)} className="h-[38px] px-5 rounded-[32px] bg-surface text-[13px] font-semibold text-text-secondary">Cancel</button>
+                        <button
+                          onClick={() => {
+                            const newPrice = parseFloat(editingPrice) || scanPrice || 0;
+                            setScanPrice(newPrice);
+                            setEditingPrice(newPrice.toFixed(2));
+                            setPriceEditing(false);
+                            if (profile?.big_five) {
+                              fetchPsychologyCost(newPrice);
+                            }
+                          }}
+                          className="h-[38px] px-5 rounded-[32px] bg-primary text-[13px] font-semibold text-white shadow-[0_4px_16px_rgba(0,95,204,0.3)]"
+                        >
+                          Update
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingPrice((scanPrice ?? 0).toFixed(2));
+                            setPriceEditing(false);
+                          }}
+                          className="h-[38px] px-5 rounded-[32px] bg-surface text-[13px] font-semibold text-text-secondary"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     </div>
                   ) : (
                     <div className="flex gap-3">
-                      <div onClick={() => setPriceEditing(true)} className="flex-1 bg-white/95 backdrop-blur-xl rounded-[20px] border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] p-4 text-center cursor-pointer">
+                      <div onClick={() => scanPrice !== null && setPriceEditing(true)} className={`flex-1 bg-white/95 backdrop-blur-xl rounded-[20px] border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] p-4 text-center ${scanPrice !== null ? "cursor-pointer" : ""}`}>
                         <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">Actual Price</span>
-                        <p className="text-[32px] font-bold text-text-primary leading-tight mt-1">{"\u00A3"}1.00</p>
-                        <span className="text-[12px] text-primary font-semibold flex items-center justify-center gap-1">
-                          <PenLine size={10} /> tap to edit
-                        </span>
+                        {scanPrice !== null ? (
+                          <>
+                            <p className="text-[32px] font-bold text-text-primary leading-tight mt-1">{"\u00A3"}{scanPrice.toFixed(2)}</p>
+                            <span className="text-[12px] text-primary font-semibold flex items-center justify-center gap-1">
+                              <PenLine size={10} /> tap to edit
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[18px] font-semibold text-text-secondary leading-tight mt-3 animate-pulse">Researching price...</p>
+                            <span className="text-[11px] text-text-tertiary mt-1 block">Market data loading</span>
+                          </>
+                        )}
                       </div>
                       <div className="flex-1 bg-gradient-to-br from-primary/20 to-accent/20 rounded-[20px] border border-white/20 p-4 text-center relative overflow-hidden min-h-[140px]">
                         <span className="text-[11px] font-semibold text-white/50 uppercase tracking-wider">Feels Like</span>
-                        <p className="text-[32px] font-bold text-white leading-tight mt-1">{"\u00A3"}3.80</p>
-                        <span className="text-[12px] text-accent font-semibold">+{"\u00A3"}2.80</span>
+                        <p className="text-[32px] font-bold text-white leading-tight mt-1">
+                          {psychologyCost ? (
+                            <>{"\u00A3"}{psychologyCost.psychology_cost.toFixed(2)}</>
+                          ) : scanPrice === null ? (
+                            <span className="text-[16px] animate-pulse">Awaiting price...</span>
+                          ) : (
+                            <span className="animate-pulse">Calculating...</span>
+                          )}
+                        </p>
+                        {psychologyCost && (
+                          <>
+                            <span className="text-[12px] text-accent font-semibold">+{"\u00A3"}{(psychologyCost.psychology_cost - psychologyCost.base_price).toFixed(2)}</span>
+                            <p className="text-xs text-text-tertiary">
+                              +{psychologyCost.personality_tax_percent}% personality tax
+                            </p>
+                          </>
+                        )}
                         <div className="absolute inset-0 bg-white/60 backdrop-blur-[6px] rounded-[20px] flex flex-col items-center justify-center px-3">
                           <Lock size={28} className="text-primary mb-1.5" fill="#005FCC" />
                           <span className="text-[13px] font-bold text-text-primary">Feels Like Price</span>
                           <span className="text-[10px] text-text-secondary mt-0.5 text-center">See the real psychological cost of your purchases</span>
-                          <button className="mt-2 h-[30px] px-4 bg-primary text-white rounded-full text-[11px] font-semibold">Upgrade to Unlock</button>
+                          <button onClick={() => setComingSoonModal({ open: true, feature: 'blueprint' })} className="mt-2 h-[30px] px-4 bg-primary text-white rounded-full text-[11px] font-semibold">Join Waitlist</button>
                         </div>
                       </div>
                     </div>
@@ -1095,28 +1493,56 @@ export default function Home() {
                     <div className="w-full shrink-0 bg-white/95 backdrop-blur-xl p-5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-[20px]">
                       <h4 className="text-[15px] font-bold text-text-primary mb-3">Psychological</h4>
                       <div className="space-y-3">
-                        {[
-                          { trait: "Openness", score: 72, insight: "Novelty-seeking makes you grab familiar comforts", from: "#A855F7", to: "#C084FC" },
-                          { trait: "Conscientiousness", score: 45, insight: "Lower planning means more spontaneous purchases", from: "#3B82F6", to: "#60A5FA" },
-                          { trait: "Extraversion", score: 81, insight: "Social situations trigger impulse buys like this", from: "#FF6B6B", to: "#FF8E8E" },
-                          { trait: "Agreeableness", score: 63, insight: "You find it hard to say no to social spending pressure", from: "#F97316", to: "#FB923C" },
-                          { trait: "Neuroticism", score: 38, insight: "Low stress about money can lead to overlooking small costs", from: "#14B8A6", to: "#2DD4BF" },
-                        ].map((t) => (
-                          <div key={t.trait}>
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-[13px] font-semibold text-text-primary">{t.trait}</span>
-                              <span className="text-[12px] font-semibold" style={{ color: t.from }}>{t.score}th</span>
+                        {(["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"] as const).map((trait) => {
+                          const key = trait.toLowerCase() as "openness" | "conscientiousness" | "extraversion" | "agreeableness" | "neuroticism";
+                          const score = profile?.big_five?.[key] ?? 50;
+                          const costFactor = psychologyCost?.breakdown.find(b => b.trait === trait);
+                          const colors: Record<string, { from: string; to: string }> = {
+                            Openness: { from: "#A855F7", to: "#C084FC" },
+                            Conscientiousness: { from: "#3B82F6", to: "#60A5FA" },
+                            Extraversion: { from: "#FF6B6B", to: "#FF8E8E" },
+                            Agreeableness: { from: "#F97316", to: "#FB923C" },
+                            Neuroticism: { from: "#14B8A6", to: "#2DD4BF" },
+                          };
+                          const { from, to } = colors[trait];
+                          const defaultInsights: Record<string, string> = {
+                            Openness: "Novelty-seeking makes you grab familiar comforts",
+                            Conscientiousness: "Lower planning means more spontaneous purchases",
+                            Extraversion: "Social situations trigger impulse buys like this",
+                            Agreeableness: "You find it hard to say no to social spending pressure",
+                            Neuroticism: "Low stress about money can lead to overlooking small costs",
+                          };
+                          const insight = costFactor?.reason || defaultInsights[trait];
+                          return (
+                            <div key={trait}>
+                              <div className="flex justify-between items-center mb-1">
+                                <span className="text-[13px] font-semibold text-text-primary">{trait}</span>
+                                <span className="text-[12px] font-semibold" style={{ color: from }}>{Math.round(score)}th</span>
+                              </div>
+                              <div className="h-1.5 bg-surface rounded-full overflow-hidden mb-1.5">
+                                <div className="h-full rounded-full" style={{ width: `${score}%`, background: `linear-gradient(90deg, ${from}, ${to})` }} />
+                              </div>
+                              <p className="text-[12px] text-text-secondary">{insight}</p>
+                              {costFactor && (
+                                <p className="text-[11px] text-primary mt-0.5">Factor: {costFactor.factor.toFixed(2)}x</p>
+                              )}
                             </div>
-                            <div className="h-1.5 bg-surface rounded-full overflow-hidden mb-1.5">
-                              <div className="h-full rounded-full" style={{ width: `${t.score}%`, background: `linear-gradient(90deg, ${t.from}, ${t.to})` }} />
-                            </div>
-                            <p className="text-[12px] text-text-secondary">{t.insight}</p>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                       <div className="mt-4 p-3 bg-primary-ultra rounded-xl">
-                        <p className="text-[13px] text-primary font-medium"><strong>Faith says:</strong> This {"\u00A3"}1 purchase feels like {"\u00A3"}3.80 to your personality. Over a year, that adds up to ~{"\u00A3"}150 in hidden psychological cost.</p>
+                        <p className="text-[13px] text-primary font-medium"><strong>AI says:</strong> {scanAnalysis?.financial_insight ?? "Analysis complete."}</p>
                       </div>
+                      {scanAnalysis?.recommendations?.length ? (
+                        <div className="mt-3 space-y-2">
+                          {scanAnalysis.recommendations.map((rec, i) => (
+                            <div key={i} className="flex items-start gap-2 text-[12px] text-text-secondary">
+                              <span className="text-primary font-bold shrink-0">{i + 1}.</span>
+                              <span>{rec}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Slide 2 — Financial (locked) */}
@@ -1140,7 +1566,7 @@ export default function Home() {
                         <Lock size={44} className="text-primary mb-3" fill="#005FCC" />
                         <h4 className="text-[17px] font-bold text-text-primary mb-1">Financial Analysis</h4>
                         <p className="text-[13px] text-text-secondary mb-4">See how this purchase impacts your budget and savings goals</p>
-                        <button className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Upgrade to Unlock</button>
+                        <button onClick={() => setComingSoonModal({ open: true, feature: 'blueprint' })} className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Join Waitlist</button>
                       </div>
                     </div>
 
@@ -1162,7 +1588,7 @@ export default function Home() {
                         <Lock size={44} className="text-primary mb-3" fill="#005FCC" />
                         <h4 className="text-[17px] font-bold text-text-primary mb-1">Spending Blueprint</h4>
                         <p className="text-[13px] text-text-secondary mb-4">Get a personalised action plan to change this habit</p>
-                        <button className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Upgrade to Unlock</button>
+                        <button onClick={() => setComingSoonModal({ open: true, feature: 'blueprint' })} className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Join Waitlist</button>
                       </div>
                     </div>
                   </div>
@@ -1196,58 +1622,48 @@ export default function Home() {
                         if (diff > 50 && altTab > 0) setAltTab(altTab - 1);
                       }}
                     >
-                      {/* Slide 1 — Same store */}
+                      {/* Slide 1 — Smart alternatives based on category */}
                       <div className="w-full shrink-0 bg-white/95 backdrop-blur-xl rounded-[20px] p-5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-                        <h4 className="text-[15px] font-bold text-text-primary mb-1">Same Store</h4>
-                        <p className="text-[12px] text-text-secondary mb-3">Cheaper options at Tesco</p>
+                        <h4 className="text-[15px] font-bold text-text-primary mb-1">Smart Choices</h4>
+                        <p className="text-[12px] text-text-secondary mb-3">AI-recommended alternatives</p>
                         <div className="space-y-2.5">
-                          {[
-                            { name: "Tesco Own Cola", price: "0.35", saving: "65%" },
-                            { name: "Sparkling Water", price: "0.45", saving: "55%" },
-                            { name: "Pepsi Max", price: "0.80", saving: "20%" },
-                          ].map((alt) => (
-                            <div key={alt.name} className="flex items-center gap-3 p-3 bg-surface rounded-[14px]">
-                              <div className="w-[42px] h-[42px] rounded-[10px] bg-white border border-black/5 flex items-center justify-center shrink-0">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+                          {(scanAnalysis?.alternatives?.length
+                            ? scanAnalysis.alternatives.map((name) => ({ name }))
+                            : []
+                          ).map((alt, idx) => (
+                            <div key={idx} className="flex items-center gap-3 p-3 bg-surface rounded-[14px]">
+                              <div className="w-[42px] h-[42px] rounded-[10px] bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20 flex items-center justify-center shrink-0">
+                                <ShoppingBag size={18} className="text-primary" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[14px] font-semibold text-text-primary">{alt.name}</span>
-                                  <span className="text-[11px] font-semibold text-accent-green">{alt.saving} less</span>
-                                </div>
-                                <span className="text-[13px] text-text-secondary">{"\u00A3"}{alt.price}</span>
+                                <span className="text-[14px] font-semibold text-text-primary">{alt.name}</span>
                               </div>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      {/* Slide 2 — Other stores */}
+                      {/* Slide 2 — Recommendations */}
                       <div className="w-full shrink-0 bg-white/95 backdrop-blur-xl rounded-[20px] p-5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-                        <h4 className="text-[15px] font-bold text-text-primary mb-1">Other Stores</h4>
-                        <p className="text-[12px] text-text-secondary mb-3">Better deals nearby</p>
+                        <h4 className="text-[15px] font-bold text-text-primary mb-1">Recommendations</h4>
+                        <p className="text-[12px] text-text-secondary mb-3">Tips from Faith</p>
                         <div className="space-y-2.5">
-                          {[
-                            { name: "Coca-Cola Original", price: "0.85", saving: "15%", store: "Aldi" },
-                            { name: "Coca-Cola Original", price: "0.90", saving: "10%", store: "Lidl" },
-                            { name: "Own Brand Cola", price: "0.25", saving: "75%", store: "Aldi" },
-                          ].map((alt, idx) => (
+                          {(scanAnalysis?.recommendations?.length
+                            ? scanAnalysis.recommendations.map((rec) => ({ name: rec }))
+                            : []
+                          ).map((rec, idx) => (
                             <div key={idx} className="flex items-center gap-3 p-3 bg-surface rounded-[14px]">
-                              <div className="w-[42px] h-[42px] rounded-[10px] bg-white border border-black/5 flex items-center justify-center shrink-0">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+                              <div className="w-[42px] h-[42px] rounded-[10px] bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 flex items-center justify-center shrink-0">
+                                <Lightbulb size={18} className="text-amber-600" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[14px] font-semibold text-text-primary">{alt.name}</span>
-                                  <span className="text-[11px] font-semibold text-accent-green">{alt.saving} less</span>
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-[13px] text-text-secondary">{"\u00A3"}{alt.price}</span>
-                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{alt.store}</span>
-                                </div>
+                                <span className="text-[14px] font-semibold text-text-primary">{rec.name}</span>
                               </div>
                             </div>
                           ))}
+                          {!scanAnalysis?.recommendations?.length && (
+                            <p className="text-[13px] text-text-tertiary text-center py-4">Complete a scan to see recommendations</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1282,6 +1698,25 @@ export default function Home() {
                   </div>
                 </div>
 
+                {/* Discuss with Faith CTA */}
+                <button
+                  onClick={() => {
+                    setPendingScanContext({
+                      scan_id: scanAnalysis?.scan_id ?? `scan_${Date.now()}`,
+                      product_name: scanAnalysis?.product_name ?? scanAnalysis?.product_identified,
+                      overall_score: scanAnalysis?.overall_score,
+                      estimated_price: scanPrice ?? undefined,
+                      psychology_cost: psychologyCost?.psychology_cost,
+                      verdict: scanAnalysis?.verdict,
+                    });
+                    go("faith");
+                  }}
+                  className="w-full mt-4 h-[56px] rounded-[32px] bg-gradient-to-r from-primary to-accent text-white text-[16px] font-semibold shadow-[0_4px_24px_rgba(0,95,204,0.35)] flex items-center justify-center gap-3 cursor-pointer active:scale-[0.98] transition-transform"
+                >
+                  <MessageCircle size={20} />
+                  Discuss with Faith
+                </button>
+
               </div>
             </div>
           )}
@@ -1292,7 +1727,7 @@ export default function Home() {
               <div className="absolute inset-0 overflow-hidden"><BlueWaveBg id="scan-res-pro" animated /></div>
 
               {/* Header */}
-              <div className="relative z-10 pt-[54px] px-5 pb-4">
+              <div className="relative z-10 safe-top px-5 pb-4">
                 <div className="flex items-center gap-3">
                   <button onClick={() => goFromNav("scan")} className="w-[42px] h-[42px] rounded-full flex items-center justify-center hover:bg-white/10 transition-colors shrink-0">
                     <ArrowRight size={20} className="text-white rotate-180" />
@@ -1300,24 +1735,46 @@ export default function Home() {
                   <h2 className="flex-1 font-sans text-[28px] font-bold text-white leading-none tracking-tight">Feels Like</h2>
                   <button onClick={() => { setProfileAnimating(true); setProfileOpen(true); requestAnimationFrame(() => requestAnimationFrame(() => setProfileAnimating(false))); }} className="w-[38px] h-[38px] rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white text-[13px] font-semibold ring-[1.5px] ring-white/60 shrink-0 relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-transparent to-transparent rounded-full pointer-events-none" />
-                    JS
+                    {userInitials}
                   </button>
                 </div>
               </div>
 
               {/* Scrollable content */}
-              <div className="flex-1 overflow-y-auto hide-scrollbar px-5 pb-8 relative z-10">
+              <div className="flex-1 overflow-y-auto hide-scrollbar px-5 safe-bottom relative z-10">
 
                 {/* Product card */}
                 <div className="bg-white/95 backdrop-blur-xl rounded-[20px] p-4 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] mb-4">
                   <div className="flex gap-4">
                     <div className="w-[90px] h-[90px] rounded-[14px] bg-surface flex items-center justify-center shrink-0 overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src="/coca-cola.png" alt="Coca-Cola" className="w-full h-full object-cover" />
+                      {scanPreview ? (
+                        // Local DataURL is always the primary source - instant and reliable
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={scanPreview}
+                          alt="Scanned product"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : scan.isAnalysing ? (
+                        <Skeleton className="w-full h-full rounded-[14px] bg-gray-200" />
+                      ) : (
+                        <div className="w-full h-full bg-surface flex items-center justify-center">
+                          <Camera size={32} className="text-gray-300" />
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 flex flex-col justify-center">
-                      <h3 className="text-[17px] font-bold text-text-primary leading-tight">Coca-Cola Original</h3>
-                      <p className="text-[13px] text-text-tertiary mt-0.5">330ml Can • Tesco</p>
+                      {scan.isAnalysing && !scanAnalysis ? (
+                        <div className="space-y-2 py-2">
+                          <Skeleton className="h-5 w-3/4 bg-gray-200" />
+                          <Skeleton className="h-4 w-1/2 bg-gray-200" />
+                        </div>
+                      ) : (
+                        <>
+                          <h3 className="text-[17px] font-bold text-text-primary leading-tight">{scanAnalysis?.product_name || scanAnalysis?.product_identified || "Product"}</h3>
+                          <p className="text-[13px] text-text-tertiary mt-0.5">{scanAnalysis ? `Score ${scanAnalysis.overall_score}/100 • Grade ${scanAnalysis.grade}` : "Scanned product"}</p>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1330,28 +1787,73 @@ export default function Home() {
                         <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wider block mb-1">Actual Price</span>
                         <div className="flex items-center gap-0.5">
                           <span className="text-[32px] font-bold text-text-primary">{"\u00A3"}</span>
-                          <input autoFocus defaultValue="1.00" className="text-[32px] font-bold text-text-primary leading-tight w-[90px] bg-transparent outline-none border-b-2 border-primary" />
+                          <input
+                            autoFocus
+                            value={editingPrice}
+                            onChange={(e) => setEditingPrice(e.target.value.replace(/[^\d.]/g, ""))}
+                            className="text-[32px] font-bold text-text-primary leading-tight w-[90px] bg-transparent outline-none border-b-2 border-primary"
+                          />
                         </div>
                         <span className="text-[12px] text-primary font-semibold mt-0.5 block">press Update to save</span>
                       </div>
                       <div className="flex flex-col gap-2 shrink-0">
-                        <button onClick={() => setPriceEditing(false)} className="h-[38px] px-5 rounded-[32px] bg-primary text-[13px] font-semibold text-white shadow-[0_4px_16px_rgba(0,95,204,0.3)] cursor-pointer">Update</button>
-                        <button onClick={() => setPriceEditing(false)} className="h-[38px] px-5 rounded-[32px] bg-surface text-[13px] font-semibold text-text-secondary cursor-pointer">Cancel</button>
+                        <button
+                          onClick={() => {
+                            const newPrice = parseFloat(editingPrice) || scanPrice || 0;
+                            setScanPrice(newPrice);
+                            setEditingPrice(newPrice.toFixed(2));
+                            setPriceEditing(false);
+                            if (profile?.big_five) {
+                              fetchPsychologyCost(newPrice);
+                            }
+                          }}
+                          className="h-[38px] px-5 rounded-[32px] bg-primary text-[13px] font-semibold text-white shadow-[0_4px_16px_rgba(0,95,204,0.3)] cursor-pointer"
+                        >
+                          Update
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingPrice((scanPrice ?? 0).toFixed(2));
+                            setPriceEditing(false);
+                          }}
+                          className="h-[38px] px-5 rounded-[32px] bg-surface text-[13px] font-semibold text-text-secondary cursor-pointer"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     </div>
                   ) : (
                     <div className="flex gap-3">
-                      <div onClick={() => setPriceEditing(true)} className="flex-1 bg-white/95 backdrop-blur-xl rounded-[20px] border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] p-4 text-center cursor-pointer">
+                      <div onClick={() => scanPrice !== null && setPriceEditing(true)} className={`flex-1 bg-white/95 backdrop-blur-xl rounded-[20px] border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] p-4 text-center ${scanPrice !== null ? "cursor-pointer" : ""}`}>
                         <span className="text-[11px] font-semibold text-text-tertiary uppercase tracking-wider">Actual Price</span>
-                        <p className="text-[32px] font-bold text-text-primary leading-tight mt-1">{"\u00A3"}1.00</p>
-                        <span className="text-[12px] text-primary font-semibold flex items-center justify-center gap-1">
-                          <PenLine size={10} /> tap to edit
-                        </span>
+                        {scanPrice !== null ? (
+                          <>
+                            <p className="text-[32px] font-bold text-text-primary leading-tight mt-1">{"\u00A3"}{scanPrice.toFixed(2)}</p>
+                            <span className="text-[12px] text-primary font-semibold flex items-center justify-center gap-1">
+                              <PenLine size={10} /> tap to edit
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[18px] font-semibold text-text-secondary leading-tight mt-3 animate-pulse">Researching price...</p>
+                            <span className="text-[11px] text-text-tertiary mt-1 block">Market data loading</span>
+                          </>
+                        )}
                       </div>
                       <div className="flex-1 bg-gradient-to-br from-primary/20 to-accent/20 rounded-[20px] border border-white/20 p-4 text-center">
                         <span className="text-[11px] font-semibold text-white/50 uppercase tracking-wider">Feels Like</span>
-                        <p className="text-[32px] font-bold text-white leading-tight mt-1">{"\u00A3"}3.80</p>
-                        <span className="text-[12px] text-accent font-semibold">+{"\u00A3"}2.80</span>
+                        <p className="text-[32px] font-bold text-white leading-tight mt-1">
+                          {psychologyCost ? (
+                            <>{"\u00A3"}{psychologyCost.psychology_cost.toFixed(2)}</>
+                          ) : scanPrice === null ? (
+                            <span className="text-[16px] animate-pulse">Awaiting price...</span>
+                          ) : (
+                            <span className="animate-pulse">{"\u00A3"}--</span>
+                          )}
+                        </p>
+                        {psychologyCost && (
+                          <span className="text-[12px] text-accent font-semibold">+{"\u00A3"}{(psychologyCost.psychology_cost - psychologyCost.base_price).toFixed(2)}</span>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1388,27 +1890,45 @@ export default function Home() {
                     <div className="w-full shrink-0 bg-white/95 backdrop-blur-xl p-5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-[20px]">
                       <h4 className="text-[15px] font-bold text-text-primary mb-3">Psychological</h4>
                       <div className="space-y-3">
-                        {[
-                          { trait: "Openness", score: 72, insight: "Novelty-seeking makes you grab familiar comforts", from: "#A855F7", to: "#C084FC" },
-                          { trait: "Conscientiousness", score: 45, insight: "Lower planning means more spontaneous purchases", from: "#3B82F6", to: "#60A5FA" },
-                          { trait: "Extraversion", score: 81, insight: "Social situations trigger impulse buys like this", from: "#FF6B6B", to: "#FF8E8E" },
-                          { trait: "Agreeableness", score: 63, insight: "You find it hard to say no to social spending pressure", from: "#F97316", to: "#FB923C" },
-                          { trait: "Neuroticism", score: 38, insight: "Low stress about money can lead to overlooking small costs", from: "#14B8A6", to: "#2DD4BF" },
-                        ].map((t) => (
-                          <div key={t.trait}>
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="text-[13px] font-semibold text-text-primary">{t.trait}</span>
-                              <span className="text-[12px] font-semibold" style={{ color: t.from }}>{t.score}th</span>
+                        {(["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Neuroticism"] as const).map((trait) => {
+                          const key = trait.toLowerCase() as "openness" | "conscientiousness" | "extraversion" | "agreeableness" | "neuroticism";
+                          const score = profile?.big_five?.[key] ?? 50;
+                          const costFactor = psychologyCost?.breakdown.find(b => b.trait === trait);
+                          const colors: Record<string, { from: string; to: string }> = {
+                            Openness: { from: "#A855F7", to: "#C084FC" },
+                            Conscientiousness: { from: "#3B82F6", to: "#60A5FA" },
+                            Extraversion: { from: "#FF6B6B", to: "#FF8E8E" },
+                            Agreeableness: { from: "#F97316", to: "#FB923C" },
+                            Neuroticism: { from: "#14B8A6", to: "#2DD4BF" },
+                          };
+                          const { from, to } = colors[trait];
+                          const defaultInsights: Record<string, string> = {
+                            Openness: "Novelty-seeking makes you grab familiar comforts",
+                            Conscientiousness: "Lower planning means more spontaneous purchases",
+                            Extraversion: "Social situations trigger impulse buys like this",
+                            Agreeableness: "You find it hard to say no to social spending pressure",
+                            Neuroticism: "Low stress about money can lead to overlooking small costs",
+                          };
+                          const insight = costFactor?.reason || defaultInsights[trait];
+                          return (
+                            <div key={trait}>
+                              <div className="flex justify-between items-center mb-1">
+                                <span className="text-[13px] font-semibold text-text-primary">{trait}</span>
+                                <span className="text-[12px] font-semibold" style={{ color: from }}>{Math.round(score)}th</span>
+                              </div>
+                              <div className="h-1.5 bg-surface rounded-full overflow-hidden mb-1.5">
+                                <div className="h-full rounded-full" style={{ width: `${score}%`, background: `linear-gradient(90deg, ${from}, ${to})` }} />
+                              </div>
+                              <p className="text-[12px] text-text-secondary">{insight}</p>
+                              {costFactor && (
+                                <p className="text-[11px] text-primary mt-0.5">Factor: {costFactor.factor.toFixed(2)}x</p>
+                              )}
                             </div>
-                            <div className="h-1.5 bg-surface rounded-full overflow-hidden mb-1.5">
-                              <div className="h-full rounded-full" style={{ width: `${t.score}%`, background: `linear-gradient(90deg, ${t.from}, ${t.to})` }} />
-                            </div>
-                            <p className="text-[12px] text-text-secondary">{t.insight}</p>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                       <div className="mt-4 p-3 bg-primary-ultra rounded-xl">
-                        <p className="text-[13px] text-primary font-medium"><strong>Faith says:</strong> This {"\u00A3"}1 purchase feels like {"\u00A3"}3.80 to your personality. Over a year, that adds up to ~{"\u00A3"}150 in hidden psychological cost.</p>
+                        <p className="text-[13px] text-primary font-medium"><strong>Faith says:</strong> {psychologyCost ? `This ${"\u00A3"}${psychologyCost.base_price.toFixed(2)} purchase feels like ${"\u00A3"}${psychologyCost.psychology_cost.toFixed(2)} to your personality. Over a year, that adds up to ~${"\u00A3"}${(psychologyCost.psychology_cost * 52).toFixed(0)} in hidden psychological cost.` : "Calculating psychological cost..."}</p>
                       </div>
                     </div>
 
@@ -1433,7 +1953,7 @@ export default function Home() {
                         <Lock size={44} className="text-primary mb-3" fill="#005FCC" />
                         <h4 className="text-[17px] font-bold text-text-primary mb-1">Financial Analysis</h4>
                         <p className="text-[13px] text-text-secondary mb-4">See how this purchase impacts your budget and savings goals</p>
-                        <button className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Upgrade to Unlock</button>
+                        <button onClick={() => setComingSoonModal({ open: true, feature: 'blueprint' })} className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Join Waitlist</button>
                       </div>
                     </div>
 
@@ -1455,7 +1975,7 @@ export default function Home() {
                         <Lock size={44} className="text-primary mb-3" fill="#005FCC" />
                         <h4 className="text-[17px] font-bold text-text-primary mb-1">Spending Blueprint</h4>
                         <p className="text-[13px] text-text-secondary mb-4">Get a personalised action plan to change this habit</p>
-                        <button className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Upgrade to Unlock</button>
+                        <button onClick={() => setComingSoonModal({ open: true, feature: 'blueprint' })} className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Join Waitlist</button>
                       </div>
                     </div>
                   </div>
@@ -1487,54 +2007,47 @@ export default function Home() {
                       }}
                     >
                       <div className="w-full shrink-0 bg-white/95 backdrop-blur-xl rounded-[20px] p-5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-                        <h4 className="text-[15px] font-bold text-text-primary mb-1">Same Store</h4>
-                        <p className="text-[12px] text-text-secondary mb-3">Cheaper options at Tesco</p>
+                        <h4 className="text-[15px] font-bold text-text-primary mb-1">Smart Choices</h4>
+                        <p className="text-[12px] text-text-secondary mb-3">AI-recommended alternatives</p>
                         <div className="space-y-2.5">
-                          {[
-                            { name: "Tesco Own Cola", price: "0.35", saving: "65%" },
-                            { name: "Sparkling Water", price: "0.45", saving: "55%" },
-                            { name: "Pepsi Max", price: "0.80", saving: "20%" },
-                          ].map((alt) => (
-                            <div key={alt.name} className="flex items-center gap-3 p-3 bg-surface rounded-[14px]">
-                              <div className="w-[42px] h-[42px] rounded-[10px] bg-white border border-black/5 flex items-center justify-center shrink-0">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+                          {(scanAnalysis?.alternatives?.length
+                            ? scanAnalysis.alternatives.map((name) => ({ name }))
+                            : []
+                          ).map((alt, idx) => (
+                            <div key={idx} className="flex items-center gap-3 p-3 bg-surface rounded-[14px]">
+                              <div className="w-[42px] h-[42px] rounded-[10px] bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20 flex items-center justify-center shrink-0">
+                                <ShoppingBag size={18} className="text-primary" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[14px] font-semibold text-text-primary">{alt.name}</span>
-                                  <span className="text-[11px] font-semibold text-accent-green">{alt.saving} less</span>
-                                </div>
-                                <span className="text-[13px] text-text-secondary">{"\u00A3"}{alt.price}</span>
+                                <span className="text-[14px] font-semibold text-text-primary">{alt.name}</span>
                               </div>
                             </div>
                           ))}
+                          {!scanAnalysis?.alternatives?.length && (
+                            <p className="text-[13px] text-text-tertiary text-center py-4">Complete a scan to see alternatives</p>
+                          )}
                         </div>
                       </div>
                       <div className="w-full shrink-0 bg-white/95 backdrop-blur-xl rounded-[20px] p-5 border border-white/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
-                        <h4 className="text-[15px] font-bold text-text-primary mb-1">Other Stores</h4>
-                        <p className="text-[12px] text-text-secondary mb-3">Better deals nearby</p>
+                        <h4 className="text-[15px] font-bold text-text-primary mb-1">Recommendations</h4>
+                        <p className="text-[12px] text-text-secondary mb-3">Tips from Faith</p>
                         <div className="space-y-2.5">
-                          {[
-                            { name: "Coca-Cola Original", price: "0.85", saving: "15%", store: "Aldi" },
-                            { name: "Coca-Cola Original", price: "0.90", saving: "10%", store: "Lidl" },
-                            { name: "Own Brand Cola", price: "0.25", saving: "75%", store: "Aldi" },
-                          ].map((alt, idx) => (
+                          {(scanAnalysis?.recommendations?.length
+                            ? scanAnalysis.recommendations.map((rec) => ({ name: rec }))
+                            : []
+                          ).map((rec, idx) => (
                             <div key={idx} className="flex items-center gap-3 p-3 bg-surface rounded-[14px]">
-                              <div className="w-[42px] h-[42px] rounded-[10px] bg-white border border-black/5 flex items-center justify-center shrink-0">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#AEAEB2" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+                              <div className="w-[42px] h-[42px] rounded-[10px] bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 flex items-center justify-center shrink-0">
+                                <Lightbulb size={18} className="text-amber-600" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[14px] font-semibold text-text-primary">{alt.name}</span>
-                                  <span className="text-[11px] font-semibold text-accent-green">{alt.saving} less</span>
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-[13px] text-text-secondary">{"\u00A3"}{alt.price}</span>
-                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{alt.store}</span>
-                                </div>
+                                <span className="text-[14px] font-semibold text-text-primary">{rec.name}</span>
                               </div>
                             </div>
                           ))}
+                          {!scanAnalysis?.recommendations?.length && (
+                            <p className="text-[13px] text-text-tertiary text-center py-4">Complete a scan to see recommendations</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1576,7 +2089,7 @@ export default function Home() {
           {screen === "banking" && (
             <div className="h-full flex flex-col relative overflow-hidden">
               <div className="absolute inset-0 overflow-hidden"><BlueWaveBg id="banking" animated /></div>
-              <div className="relative z-10 pt-[54px] px-5 pb-4">
+              <div className="relative z-10 safe-top px-5 pb-4">
                 <h2 className="font-sans text-[28px] font-bold text-white leading-none tracking-tight">Banking</h2>
                 <p className="text-[12px] text-white/50 mt-1">Manage your accounts and cards</p>
               </div>
@@ -1603,18 +2116,22 @@ export default function Home() {
                 <Lock size={44} className="text-primary mb-3" fill="#005FCC" />
                 <h4 className="text-[20px] font-bold text-text-primary mb-1">Banking</h4>
                 <p className="text-[13px] text-text-secondary mb-5 text-center">Connect your bank accounts and track spending in real time</p>
-                <button className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Upgrade to Unlock</button>
+                <button onClick={() => setComingSoonModal({ open: true, feature: 'blueprint' })} className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Join Waitlist</button>
               </div>
               {/* Navbar */}
-              <div className="relative z-30 pb-8 pt-2 px-5">
+              <div className="relative z-30 safe-bottom pt-2 px-5">
                 <div className="liquid-glass rounded-[32px] flex items-center justify-between px-2 h-[50px] relative">
                   <button onClick={() => goFromNav("profile")} className="flex flex-col items-center justify-center w-[56px]">
                     <Brain size={18} className="text-white/70" />
                     <span className="text-[9px] text-white/50 mt-0.5">Profile</span>
                   </button>
-                  <button onClick={() => goFromNav("faith")} className="flex flex-col items-center justify-center w-[56px]">
-                    <MessageCircle size={18} className="text-white/70" />
-                    <span className="text-[9px] text-white/50 mt-0.5">Faith</span>
+                  <button onClick={() => goToFaithFromNav()} className="flex flex-col items-center justify-center w-[56px]">
+                    {hasOceanScores ? (
+                      <MessageCircle size={18} className="text-white/70" />
+                    ) : (
+                      <Lock size={18} className="text-white/40" />
+                    )}
+                    <span className="text-[9px] text-white/50 mt-0.5">{hasOceanScores ? "Faith" : "Locked"}</span>
                   </button>
                   <button onClick={() => goFromNav("scan")} className="flex flex-col items-center justify-center w-[56px]">
                     <Camera size={18} className="text-white/70" />
@@ -1624,7 +2141,7 @@ export default function Home() {
                     <Landmark size={18} className="text-white" />
                     <span className="text-[9px] text-white mt-0.5 font-semibold">Banking</span>
                   </button>
-                  <button onClick={() => goFromNav("analytics")} className="flex flex-col items-center justify-center w-[56px]">
+                  <button onClick={() => setComingSoonModal({ open: true, feature: 'analytics' })} className="flex flex-col items-center justify-center w-[56px]">
                     <BarChart3 size={18} className="text-white/70" />
                     <span className="text-[9px] text-white/50 mt-0.5">Analytics</span>
                   </button>
@@ -1637,7 +2154,7 @@ export default function Home() {
           {screen === "analytics" && (
             <div className="h-full flex flex-col relative overflow-hidden">
               <div className="absolute inset-0 overflow-hidden"><BlueWaveBg id="analytics" animated /></div>
-              <div className="relative z-10 pt-[54px] px-5 pb-4">
+              <div className="relative z-10 safe-top px-5 pb-4">
                 <h2 className="font-sans text-[28px] font-bold text-white leading-none tracking-tight">Analytics</h2>
                 <p className="text-[12px] text-white/50 mt-1">Financial insights and trends</p>
               </div>
@@ -1674,24 +2191,28 @@ export default function Home() {
                 <Lock size={44} className="text-primary mb-3" fill="#005FCC" />
                 <h4 className="text-[20px] font-bold text-text-primary mb-1">Analytics</h4>
                 <p className="text-[13px] text-text-secondary mb-5 text-center">Track spending patterns, set budgets, and visualise your financial health</p>
-                <button className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Upgrade to Unlock</button>
+                <button onClick={() => setComingSoonModal({ open: true, feature: 'blueprint' })} className="h-[50px] px-8 bg-primary text-white rounded-[32px] text-[15px] font-semibold shadow-[0_4px_16px_rgba(0,95,204,0.3)]">Join Waitlist</button>
               </div>
               {/* Navbar */}
-              <div className="relative z-30 pb-8 pt-2 px-5">
+              <div className="relative z-30 safe-bottom pt-2 px-5">
                 <div className="liquid-glass rounded-[32px] flex items-center justify-between px-2 h-[50px] relative">
                   <button onClick={() => goFromNav("profile")} className="flex flex-col items-center justify-center w-[56px]">
                     <Brain size={18} className="text-white/70" />
                     <span className="text-[9px] text-white/50 mt-0.5">Profile</span>
                   </button>
-                  <button onClick={() => goFromNav("faith")} className="flex flex-col items-center justify-center w-[56px]">
-                    <MessageCircle size={18} className="text-white/70" />
-                    <span className="text-[9px] text-white/50 mt-0.5">Faith</span>
+                  <button onClick={() => goToFaithFromNav()} className="flex flex-col items-center justify-center w-[56px]">
+                    {hasOceanScores ? (
+                      <MessageCircle size={18} className="text-white/70" />
+                    ) : (
+                      <Lock size={18} className="text-white/40" />
+                    )}
+                    <span className="text-[9px] text-white/50 mt-0.5">{hasOceanScores ? "Faith" : "Locked"}</span>
                   </button>
                   <button onClick={() => goFromNav("scan")} className="flex flex-col items-center justify-center w-[56px]">
                     <Camera size={18} className="text-white/70" />
                     <span className="text-[9px] text-white/50 mt-0.5">Feels Like</span>
                   </button>
-                  <button onClick={() => goFromNav("banking")} className="flex flex-col items-center justify-center w-[56px]">
+                  <button onClick={() => setComingSoonModal({ open: true, feature: 'banking' })} className="flex flex-col items-center justify-center w-[56px]">
                     <Landmark size={18} className="text-white/70" />
                     <span className="text-[9px] text-white/50 mt-0.5">Banking</span>
                   </button>
@@ -1743,14 +2264,25 @@ export default function Home() {
           >
             <div className="absolute inset-0 overflow-hidden z-0"><BlueWaveBg id="drawer" animated /></div>
             {/* Header — matches app header positioning */}
-            <div className="relative z-10 pt-[54px] px-5 pb-2">
+            <div className="relative z-10 safe-top px-5 pb-2">
               <div className="flex items-center gap-3 h-[50px]">
                 {drawerSearchOpen ? (
                   <div className="flex-1 h-[50px] rounded-[32px] bg-white/10 border border-white/15 flex items-center pl-2 pr-5 gap-2">
-                    <button onClick={() => setDrawerSearchOpen(false)} className="w-[28px] h-[28px] flex items-center justify-center shrink-0">
+                    <button onClick={() => { setDrawerSearchOpen(false); setDrawerSearchQuery(""); }} className="w-[28px] h-[28px] flex items-center justify-center shrink-0">
                       <ArrowRight size={18} className="text-white/50 rotate-180" />
                     </button>
-                    <input autoFocus className="text-[15px] text-white flex-1 bg-transparent outline-none placeholder:text-white/30" placeholder="Search" />
+                    <input
+                      autoFocus
+                      value={drawerSearchQuery}
+                      onChange={(e) => setDrawerSearchQuery(e.target.value)}
+                      className="text-[15px] text-white flex-1 bg-transparent outline-none placeholder:text-white/30"
+                      placeholder="Search conversations..."
+                    />
+                    {drawerSearchQuery && (
+                      <button onClick={() => setDrawerSearchQuery("")} className="w-[24px] h-[24px] rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                        <X size={12} className="text-white" />
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -1773,31 +2305,88 @@ export default function Home() {
 
             {/* History items */}
             <div className="relative z-10 flex-1 overflow-y-auto hide-scrollbar px-5 space-y-3">
-              {(drawerSource === "faith" ? [
-                { label: "Today", items: ["Why do I spend so much on weekends?", "Social spending analysis", "Weekly budget check", "Help me save more"] },
-                { label: "Yesterday", items: ["Monthly savings goal", "Coffee habit tracker", "Am I overspending?"] },
-                { label: "Last 7 days", items: ["OCEAN profile review", "Subscription audit", "Rent vs buy calculator", "Holiday budget planner"] },
-              ] : [
-                { label: "Today", items: ["Tesco barcode scan", "Amazon impulse buy check"] },
-                { label: "Yesterday", items: ["Sainsbury\u2019s grocery scan", "Zara price scan", "Costa coffee scan"] },
-                { label: "Last 7 days", items: ["Energy bill comparison", "Car insurance renewal", "Gym membership scan", "Takeaway receipt scan"] },
-              ]).map((group) => (
-                <div key={group.label}>
-                  <span className="text-[18px] font-bold text-white drop-shadow-sm px-1 block mb-2">{group.label}</span>
-                  <div className="bg-white/8 rounded-[16px] border border-white/10 overflow-hidden">
-                    {group.items.map((t, i) => (
-                      <button key={t} className={`w-full px-4 py-3 hover:bg-white/5 transition-colors text-left ${i < group.items.length - 1 ? "border-b border-white/10" : ""}`}>
-                        <span className="text-[14px] text-white/70">{t}</span>
-                      </button>
+              {drawerSource === "faith" ? (
+                // Faith chat history - real data from backend
+                chatHistory.loading ? (
+                  // Loading skeleton
+                  <div className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i}>
+                        <div className="h-5 w-20 bg-white/10 rounded mb-2 animate-pulse" />
+                        <div className="bg-white/8 rounded-[16px] border border-white/10 overflow-hidden">
+                          {[1, 2, 3].map((j) => (
+                            <div key={j} className={`px-4 py-3 ${j < 3 ? "border-b border-white/10" : ""}`}>
+                              <div className="h-4 bg-white/10 rounded animate-pulse w-3/4" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              ))}
+                ) : groupedSessions.length === 0 && drawerSearchQuery ? (
+                  // No search results
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mb-4">
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                    </div>
+                    <h3 className="text-[16px] font-semibold text-white/80 mb-1">No results found</h3>
+                    <p className="text-[13px] text-white/50 max-w-[200px]">Try a different search term</p>
+                  </div>
+                ) : groupedSessions.length === 0 ? (
+                  // Empty state
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center mb-4">
+                      <MessageCircle size={28} className="text-white/40" />
+                    </div>
+                    <h3 className="text-[16px] font-semibold text-white/80 mb-1">No conversations yet</h3>
+                    <p className="text-[13px] text-white/50 max-w-[200px]">Start a new chat with Faith to see your history here</p>
+                  </div>
+                ) : (
+                  // Grouped sessions
+                  groupedSessions.map((group) => (
+                    <div key={group.label}>
+                      <span className="text-[18px] font-bold text-white drop-shadow-sm px-1 block mb-2">{group.label}</span>
+                      <div className="bg-white/8 rounded-[16px] border border-white/10 overflow-hidden">
+                        {group.items.map((session, i) => (
+                          <button
+                            key={session.session_id}
+                            onClick={() => handleSelectSession(session)}
+                            className={`w-full px-4 py-3 hover:bg-white/5 transition-colors text-left ${i < group.items.length - 1 ? "border-b border-white/10" : ""} ${activeSessionId === session.session_id ? "bg-white/10" : ""}`}
+                          >
+                            <span className="text-[14px] text-white/70 line-clamp-1">{session.title || session.first_message_preview || "Untitled conversation"}</span>
+                            <span className="text-[11px] text-white/40 mt-0.5 block">
+                              {session.message_count} message{session.message_count !== 1 ? "s" : ""}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )
+              ) : (
+                // Scan history - still using mock data for now
+                [
+                  { label: "Today", items: ["Tesco barcode scan", "Amazon impulse buy check"] },
+                  { label: "Yesterday", items: ["Sainsbury\u2019s grocery scan", "Zara price scan", "Costa coffee scan"] },
+                  { label: "Last 7 days", items: ["Energy bill comparison", "Car insurance renewal", "Gym membership scan", "Takeaway receipt scan"] },
+                ].map((group) => (
+                  <div key={group.label}>
+                    <span className="text-[18px] font-bold text-white drop-shadow-sm px-1 block mb-2">{group.label}</span>
+                    <div className="bg-white/8 rounded-[16px] border border-white/10 overflow-hidden">
+                      {group.items.map((t, i) => (
+                        <button key={t} className={`w-full px-4 py-3 hover:bg-white/5 transition-colors text-left ${i < group.items.length - 1 ? "border-b border-white/10" : ""}`}>
+                          <span className="text-[14px] text-white/70">{t}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
             {/* New chat FAB */}
             <div className="absolute bottom-8 right-5 z-10">
-              <button onClick={() => setDrawerOpen(false)} className="group h-[50px] rounded-full bg-white/10 border border-white/15 flex items-center justify-center shadow-[0_4px_20px_rgba(0,0,0,0.2)] hover:bg-primary hover:border-primary transition-all duration-300 px-3.5 gap-0 hover:gap-2 hover:px-5 hover:shadow-[0_4px_24px_rgba(0,95,204,0.4)]">
+              <button onClick={drawerSource === "faith" ? handleNewChat : () => setDrawerOpen(false)} className="group h-[50px] rounded-full bg-white/10 border border-white/15 flex items-center justify-center shadow-[0_4px_20px_rgba(0,0,0,0.2)] hover:bg-primary hover:border-primary transition-all duration-300 px-3.5 gap-0 hover:gap-2 hover:px-5 hover:shadow-[0_4px_24px_rgba(0,95,204,0.4)]">
                 {drawerSource === "faith" ? <MessageCircle size={20} className="text-white shrink-0" /> : <Camera size={20} className="text-white shrink-0" />}
                 <span className="text-[15px] font-semibold text-white max-w-0 overflow-hidden group-hover:max-w-[100px] transition-all duration-300 whitespace-nowrap">{drawerSource === "faith" ? "New Chat" : "New Scan"}</span>
               </button>
@@ -1805,8 +2394,29 @@ export default function Home() {
 
           </div>
 
-        </PhoneFrame>
-      </main>
+      {/* Coming Soon Modal for Banking/Analytics/Blueprint */}
+      <ComingSoonModal
+        isOpen={comingSoonModal.open}
+        onClose={() => setComingSoonModal({ open: false, feature: null })}
+        feature={
+          comingSoonModal.feature === 'banking' ? 'Open Banking' :
+          comingSoonModal.feature === 'blueprint' ? 'Spending Blueprint' :
+          'Financial Analytics'
+        }
+        featureKey={comingSoonModal.feature ?? 'banking'}
+        description={
+          comingSoonModal.feature === 'banking'
+            ? 'Connect your accounts to see how your personality shapes your real spending patterns.'
+            : comingSoonModal.feature === 'blueprint'
+            ? 'Get a personalised action plan based on your OCEAN profile and spending patterns.'
+            : 'Track your emotional spending over time and see the impact of your psychology on your wallet.'
+        }
+        icon={
+          comingSoonModal.feature === 'banking' ? <Landmark size={28} className="text-accent" /> :
+          comingSoonModal.feature === 'blueprint' ? <Lock size={28} className="text-accent" /> :
+          <BarChart3 size={28} className="text-accent" />
+        }
+      />
     </div>
   );
 }
@@ -1814,7 +2424,7 @@ export default function Home() {
 /* OCEAN standalone header */
 function OceanHeader({ onBack }: { onBack: () => void }) {
   return (
-    <div className="relative z-[100] pt-[54px] px-5 pb-4">
+    <div className="relative z-[100] safe-top px-5 pb-4">
       <div className="flex items-center gap-3">
         <button onClick={onBack} className="w-[42px] h-[42px] rounded-full flex items-center justify-center hover:bg-white/10 transition-colors shrink-0">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
@@ -1838,7 +2448,7 @@ function BlueWaveBg({ id, animated = false }: { id: string; animated?: boolean }
   const gradIds = [`${id}-arc1`, `${id}-arc2`, `${id}-arc3`, `${id}-arc4`];
 
   return (
-    <svg className="absolute inset-0 w-full h-full" viewBox="0 0 393 852" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 393 852" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id={`${id}-base`} x1="0" y1="0.5" x2="1" y2="0.5">
           <stop offset="0%" stopColor="#3CB8F0" />

@@ -1,11 +1,11 @@
 "use client";
 
-export default function BottomNav({ activeTab = "home", onTabChange }: { activeTab?: string; onTabChange?: (tab: string) => void }) {
+export default function BottomNav({ activeTab = "home", onTabChange, hasOceanScores = true }: { activeTab?: string; onTabChange?: (tab: string) => void; hasOceanScores?: boolean }) {
   return (
     <div className="absolute bottom-0 inset-x-0 z-[999] pb-5 pt-2 px-5">
       <div className="h-[70px] rounded-[32px] bg-black/25 backdrop-blur-[40px] saturate-[180%] border border-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)] flex items-center justify-around px-2">
         <NavTab icon="profile" label="Profile" active={activeTab === "home"} onClick={() => onTabChange?.("home")} />
-        <NavTab icon="faith" label="Faith" active={activeTab === "faith"} onClick={() => onTabChange?.("faith")} />
+        <NavTab icon={hasOceanScores ? "faith" : "locked"} label={hasOceanScores ? "Faith" : "Locked"} active={activeTab === "faith"} onClick={() => onTabChange?.("faith")} />
         <NavTab icon="feels" label="Feels Like" active={activeTab === "feels"} onClick={() => onTabChange?.("feels")} />
         <NavTab icon="banking" label="Banking" active={activeTab === "banking"} onClick={() => onTabChange?.("banking")} />
         <NavTab icon="analytics" label="Analytics" active={activeTab === "analytics"} onClick={() => onTabChange?.("analytics")} />
@@ -59,8 +59,14 @@ function NavTab({ icon, label, active, onClick }: { icon: string; label: string;
             <line x1="6" y1="20" x2="6" y2="14" />
           </svg>
         )}
+        {icon === "locked" && (
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-50">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0110 0v4" />
+          </svg>
+        )}
       </div>
-      <span className={`text-[9px] font-semibold mt-0.5 text-white`}>{label}</span>
+      <span className={`text-[9px] font-semibold mt-0.5 ${icon === "locked" ? "text-white/50" : "text-white"}`}>{label}</span>
     </div>
   );
 }

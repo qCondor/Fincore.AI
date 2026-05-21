@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fincore - AI-Powered Financial Coaching</title>
+  <style>
+    @font-face {
+      font-family: 'SF Pro Display';
+      src: url('https://sf.abarber.me/SF-Pro-Display-Regular.otf') format('opentype');
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: 'SF Pro Display';
+      src: url('https://sf.abarber.me/SF-Pro-Display-Medium.otf') format('opentype');
+      font-weight: 500;
+    }
+    @font-face {
+      font-family: 'SF Pro Display';
+      src: url('https://sf.abarber.me/SF-Pro-Display-Semibold.otf') format('opentype');
+      font-weight: 600;
+    }
+    @font-face {
+      font-family: 'SF Pro Display';
+      src: url('https://sf.abarber.me/SF-Pro-Display-Bold.otf') format('opentype');
+      font-weight: 700;
+    }
+    @font-face {
+      font-family: 'SF Pro Text';
+      src: url('https://sf.abarber.me/SF-Pro-Text-Regular.otf') format('opentype');
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: 'SF Pro Text';
+      src: url('https://sf.abarber.me/SF-Pro-Text-Medium.otf') format('opentype');
+      font-weight: 500;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary: #005FCC;
+      --primary-dark: #004AAD;
+      --primary-light: #3380D6;
+      --accent: #00C2FF;
+      --accent-green: #34C759;
+      --text-primary: #1D1D1F;
+      --text-secondary: #6E6E73;
+      --text-tertiary: #AEAEB2;
+      --font-display: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+      --font-text: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      overflow-x: hidden;
+    }
+
+    body {
+      font-family: var(--font-text);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* iCloud animated background */
+    .hero-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background: linear-gradient(160deg, #56CCF2 0%, #2F80ED 25%, #005FCC 50%, #2D9EE0 75%, #56CCF2 100%);
+      background-size: 300% 300%;
+      animation: bgShift 12s ease-in-out infinite;
+      overflow: hidden;
+    }
+
+    @keyframes bgShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .hero-bg::before {
+      content: '';
+      position: absolute;
+      top: -40%;
+      left: -20%;
+      width: 140%;
+      height: 140%;
+      background: radial-gradient(ellipse at 30% 50%, rgba(255,255,255,0.25) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 30%, rgba(255,255,255,0.18) 0%, transparent 50%),
+                  radial-gradient(ellipse at 50% 80%, rgba(0,194,255,0.15) 0%, transparent 50%);
+      animation: streakMove 8s ease-in-out infinite;
+    }
+
+    @keyframes streakMove {
+      0% { transform: translateX(0) translateY(0) rotate(0deg); }
+      50% { transform: translateX(30px) translateY(-20px) rotate(2deg); }
+      100% { transform: translateX(0) translateY(0) rotate(0deg); }
+    }
+
+    .light-beam {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      animation: beamFloat 6s ease-in-out infinite;
+    }
+
+    .light-beam:nth-child(1) {
+      width: 500px; height: 500px;
+      background: rgba(86, 204, 242, 0.25);
+      top: 5%; left: 5%;
+      animation-delay: 0s;
+    }
+    .light-beam:nth-child(2) {
+      width: 400px; height: 400px;
+      background: rgba(255, 255, 255, 0.18);
+      top: 30%; right: 5%;
+      animation-delay: 2s;
+    }
+    .light-beam:nth-child(3) {
+      width: 600px; height: 350px;
+      background: rgba(0, 95, 204, 0.2);
+      bottom: 5%; left: 25%;
+      animation-delay: 4s;
+    }
+
+    @keyframes beamFloat {
+      0%, 100% { opacity: 0.4; transform: scale(1) translate(0,0); }
+      50% { opacity: 0.7; transform: scale(1.15) translate(25px, -20px); }
+    }
+
+    /* Content */
+    .container {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+    }
+
+    /* Logo */
+    .logo-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    .logo-icon {
+      width: 64px;
+      height: 64px;
+      background: rgba(255,255,255,0.2);
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+
+    .logo-icon svg {
+      width: 36px;
+      height: 36px;
+    }
+
+    .logo-text {
+      font-family: var(--font-display);
+      font-size: 42px;
+      font-weight: 700;
+      color: white;
+      letter-spacing: -1.5px;
+      text-shadow: 0 2px 20px rgba(0,0,0,0.15);
+    }
+
+    /* Glass card */
+    .glass-card {
+      background: rgba(255,255,255,0.2);
+      backdrop-filter: blur(50px) saturate(180%);
+      -webkit-backdrop-filter: blur(50px) saturate(180%);
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 32px;
+      padding: 48px 40px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.12),
+                  inset 0 1px 0 rgba(255,255,255,0.4);
+      text-align: center;
+    }
+
+    .glass-card h1 {
+      font-family: var(--font-display);
+      font-size: 32px;
+      font-weight: 700;
+      color: white;
+      letter-spacing: -0.8px;
+      margin-bottom: 12px;
+      line-height: 1.2;
+    }
+
+    .glass-card p {
+      font-size: 17px;
+      color: rgba(255,255,255,0.8);
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    /* Features */
+    .features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 36px;
+    }
+
+    .feature-tag {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 100px;
+      font-size: 14px;
+      font-weight: 500;
+      color: white;
+    }
+
+    .feature-tag svg {
+      width: 18px;
+      height: 18px;
+      opacity: 0.9;
+    }
+
+    /* Form */
+    .signup-form {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .input-wrap {
+      position: relative;
+    }
+
+    .input-wrap input {
+      width: 100%;
+      height: 56px;
+      padding: 0 24px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.9);
+      font-family: var(--font-text);
+      font-size: 16px;
+      color: var(--text-primary);
+      outline: none;
+      transition: all 0.25s ease;
+    }
+
+    .input-wrap input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    .input-wrap input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(0, 95, 204, 0.2);
+    }
+
+    .submit-btn {
+      height: 56px;
+      border: none;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      color: white;
+      font-family: var(--font-text);
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      box-shadow: 0 4px 20px rgba(0, 95, 204, 0.4);
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0, 95, 204, 0.5);
+    }
+
+    .submit-btn:active {
+      transform: translateY(0);
+    }
+
+    .form-note {
+      font-size: 13px;
+      color: rgba(255,255,255,0.6);
+      margin-top: 8px;
+    }
+
+    /* Success state */
+    .success-message {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 24px 0;
+    }
+
+    .success-message.show {
+      display: flex;
+    }
+
+    .signup-form.hidden {
+      display: none;
+    }
+
+    .success-icon {
+      width: 64px;
+      height: 64px;
+      background: rgba(52, 199, 89, 0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .success-icon svg {
+      width: 32px;
+      height: 32px;
+      color: var(--accent-green);
+    }
+
+    .success-message h3 {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .success-message p {
+      font-size: 15px;
+      color: rgba(255,255,255,0.7);
+      margin-bottom: 0;
+    }
+
+    /* Footer */
+    .footer {
+      position: absolute;
+      bottom: 24px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+    }
+
+    .footer a {
+      color: rgba(255,255,255,0.7);
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      color: white;
+    }
+
+    /* Responsive */
+    @media (max-width: 520px) {
+      .glass-card {
+        padding: 36px 24px;
+        border-radius: 24px;
+      }
+
+      .glass-card h1 {
+        font-size: 26px;
+      }
+
+      .logo-text {
+        font-size: 32px;
+      }
+
+      .logo-icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 14px;
+      }
+
+      .logo-icon svg {
+        width: 28px;
+        height: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="hero-bg">
+    <div class="light-beam"></div>
+    <div class="light-beam"></div>
+    <div class="light-beam"></div>
+  </div>
+
+  <div class="container">
+    <div class="logo-wrap">
+      <div class="logo-icon">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 6h16v4H12v4h10v4H12v10H8V6z" fill="white"/>
+        </svg>
+      </div>
+      <span class="logo-text">Fincore</span>
+    </div>
+
+    <div class="glass-card">
+      <h1>Your AI Financial Coach,<br>Tailored to You</h1>
+      <p>Discover your financial personality and get personalised money guidance powered by AI — built around who you really are.</p>
+
+      <div class="features">
+        <div class="feature-tag">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          Personality-Driven
+        </div>
+        <div class="feature-tag">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          AI-Powered
+        </div>
+        <div class="feature-tag">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          Private & Secure
+        </div>
+      </div>
+
+      <form class="signup-form" id="signupForm">
+        <div class="input-wrap">
+          <input type="email" placeholder="Enter your email" required id="emailInput">
+        </div>
+        <button type="submit" class="submit-btn">Get Early Access</button>
+        <p class="form-note">Join the waitlist — no spam, just updates.</p>
+      </form>
+
+      <div class="success-message" id="successMessage">
+        <div class="success-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <h3>You're on the list!</h3>
+        <p>We'll be in touch when early access opens.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <p>&copy; 2026 Fincore. <a href="#">Privacy</a> · <a href="#">Terms</a></p>
+  </footer>
+
+  <script>
+    document.getElementById('signupForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      const email = document.getElementById('emailInput').value;
+      const form = document.getElementById('signupForm');
+      const success = document.getElementById('successMessage');
+
+      // Here you would typically send the email to your backend
+      // For now, we'll simulate a successful signup
+      try {
+        // Uncomment and modify this when you have a backend endpoint:
+        // await fetch('/api/waitlist', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type': 'application/json' },
+        //   body: JSON.stringify({ email })
+        // });
+
+        form.classList.add('hidden');
+        success.classList.add('show');
+      } catch (error) {
+        alert('Something went wrong. Please try again.');
+      }
+    });
+  </script>
+</body>
+</html>

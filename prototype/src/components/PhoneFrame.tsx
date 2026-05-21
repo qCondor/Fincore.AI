@@ -9,12 +9,14 @@ export default function PhoneFrame({
   showNav = false,
   activeTab = "home",
   onTabChange,
+  hasOceanScores = true,
 }: {
   children: ReactNode;
   statusLight?: boolean;
   showNav?: boolean;
   activeTab?: string;
   onTabChange?: (tab: string) => void;
+  hasOceanScores?: boolean;
 }) {
   return (
     <div className="relative w-[393px] h-[852px] rounded-[54px] bg-surface overflow-hidden shadow-[0_0_0_1px_rgba(0,0,0,0.08),0_20px_60px_rgba(0,0,0,0.15),0_0_0_11px_#1D1D1F,0_0_0_13px_#3A3A3C]">
@@ -49,7 +51,7 @@ export default function PhoneFrame({
       </div>
 
       {/* Bottom Nav */}
-      {showNav && <BottomNav activeTab={activeTab} onTabChange={onTabChange} />}
+      {showNav && <BottomNav activeTab={activeTab} onTabChange={onTabChange} hasOceanScores={hasOceanScores} />}
     </div>
   );
 }

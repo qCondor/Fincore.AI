@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 393 852" width="393" height="852">
+  <defs>
+    <linearGradient id="base-gradient" x1="0" y1="0.5" x2="1" y2="0.5">
+      <stop offset="0%" stop-color="#3CB8F0" />
+      <stop offset="50%" stop-color="#0A6FE8" />
+      <stop offset="100%" stop-color="#0035A0" />
+    </linearGradient>
+    <linearGradient id="wave1-gradient" x1="0.8" y1="0" x2="0.2" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#A8EAFF" stop-opacity="0.55" />
+      <stop offset="45%" stop-color="#70D8FF" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#5ED4FF" stop-opacity="0.05" />
+    </linearGradient>
+    <linearGradient id="wave2-gradient" x1="0.7" y1="0" x2="0.3" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#6DDDFF" stop-opacity="0.4" />
+      <stop offset="50%" stop-color="#44BBFF" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#1A90FF" stop-opacity="0.05" />
+    </linearGradient>
+    <linearGradient id="wave3-gradient" x1="0.6" y1="0" x2="0.4" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#50C8FF" stop-opacity="0.35" />
+      <stop offset="50%" stop-color="#2AA0F0" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#0A6FE8" stop-opacity="0.05" />
+    </linearGradient>
+    <linearGradient id="wave4-gradient" x1="0.5" y1="0" x2="0.5" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#1A5FAA" stop-opacity="0.4" />
+      <stop offset="50%" stop-color="#0D4080" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#003070" stop-opacity="0.05" />
+    </linearGradient>
+  </defs>
+
+  <!-- Layer: Background Base -->
+  <g id="Background">
+    <rect width="393" height="852" fill="url(#base-gradient)" />
+  </g>
+
+  <!-- Layer: Wave 1 - Lightest (front) -->
+  <g id="Wave-1-Light">
+    <path d="M443,-50 C460,250 100,350 -50,550 C-80,650 50,800 -50,902 L443,902 Z" fill="url(#wave1-gradient)" />
+  </g>
+
+  <!-- Layer: Wave 2 - Mid Light -->
+  <g id="Wave-2-MidLight">
+    <path d="M443,-150 C450,150 50,250 -100,420 C-130,530 30,700 -50,902 L443,902 Z" fill="url(#wave2-gradient)" />
+  </g>
+
+  <!-- Layer: Wave 3 - Mid Dark -->
+  <g id="Wave-3-MidDark">
+    <path d="M443,-250 C440,80 20,170 -150,300 C-180,400 10,580 -50,902 L443,902 Z" fill="url(#wave3-gradient)" />
+  </g>
+
+  <!-- Layer: Wave 4 - Darkest (back) -->
+  <g id="Wave-4-Dark">
+    <path d="M443,400 C350,550 200,750 100,820 C50,860 0,840 -50,902 L443,902 Z" fill="url(#wave4-gradient)" />
+  </g>
+</svg>

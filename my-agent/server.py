@@ -1,0 +1,859 @@
+import asyncio
+import base64
+import json
+import logging
+import os
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+# Load .env file if it exists
+from dotenv import load_dotenv
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+
+import boto3
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from coach import stream_coach_response, save_profile, get_profile
+from scorer import score_survey
+from math_utils import calculate_psychology_cost
+from image_agent import analyze_image, SYSTEM_PROMPT, ANALYSIS_PROMPT
+from tracing import flush_all as flush_langfuse
+from image_models import (
+    AnalyzeRequest,
+    AnalyzeResponse,
+    AnalysisResult,
+    ScoreBreakdown,
+    PriceCheckRequest,
+    PriceCheckResponse,
+    StorePrice,
+)
+import price_matcher
+
+logger = logging.getLogger("fincore.server")
+
+INSIGHTS_SYSTEM_PROMPT = """Act as a world-class financial psychologist. Explain how a user's specific OCEAN scores will influence their spending and how the 'Faith' AI will coach them to be better.
+
+Be warm, direct, and actionable. Use British English. Keep the response to 2-3 sentences that feel personal and specific to their scores."""
+
+
+async def generate_insights(big_five: dict, name: str) -> str:
+    """Generate personalised insights using Claude via the Agent SDK (same as coach)."""
+    from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, ResultMessage
+
+    scores_text = ", ".join(f"{k}: {v}/100" for k, v in big_five.items())
+    user_prompt = f"Generate a 'How Faith Will Help You' insight for {name} with these OCEAN scores: {scores_text}. Keep it to 2-3 sentences, warm and actionable, using British English."
+
+    result_text = ""
+    async for msg in query(
+        prompt=user_prompt,
+        options=ClaudeAgentOptions(
+            system_prompt=INSIGHTS_SYSTEM_PROMPT,
+            allowed_tools=[],
+            permission_mode="dontAsk",
+        ),
+    ):
+        if isinstance(msg, AssistantMessage):
+            for block in msg.content:
+                if hasattr(block, "text"):
+                    result_text += block.text
+        elif isinstance(msg, ResultMessage):
+            break
+
+    return result_text.strip() or "Faith will help you understand your spending patterns and build better financial habits."
+
+
+def _s3():
+    """Return a cached S3 client."""
+    if not hasattr(_s3, "_client"):
+        _s3._client = boto3.client("s3")
+    return _s3._client
+
+
+def save_scan(user_id: str, scan_data: dict, bucket: str) -> str:
+    """Save a scan result to S3 and return the scan_id."""
+    scan_id = str(uuid.uuid4())[:8]
+    timestamp = datetime.utcnow().isoformat()
+
+    scan_record = {
+        "scan_id": scan_id,
+        "timestamp": timestamp,
+        "user_id": user_id,
+        **scan_data
+    }
+
+    key = f"users/{user_id}/scans/{scan_id}.json"
+    _s3().put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=json.dumps(scan_record),
+        ContentType="application/json"
+    )
+    return scan_id
+
+
+def get_user_scans(user_id: str, bucket: str, limit: int = 10) -> list:
+    """Get recent scans for a user."""
+    try:
+        response = _s3().list_objects_v2(
+            Bucket=bucket,
+            Prefix=f"users/{user_id}/scans/",
+            MaxKeys=limit * 3  # Request more since we filter out non-JSON files
+        )
+
+        scans = []
+        for obj in response.get("Contents", []):
+            key = obj["Key"]
+            # Only process .json files - skip images and other files
+            if not key.endswith(".json"):
+                continue
+            try:
+                scan_obj = _s3().get_object(Bucket=bucket, Key=key)
+                scan_data = json.loads(scan_obj["Body"].read())
+                scans.append(scan_data)
+            except Exception as e:
+                logger.warning(f"Failed to read scan {key}: {e}")
+                continue
+
+        # Sort by timestamp descending
+        scans.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return scans[:limit]
+    except Exception as e:
+        logger.error(f"Failed to list scans for user {user_id}: {e}")
+        return []
+
+
+def get_scan(user_id: str, scan_id: str, bucket: str) -> dict | None:
+    """Get a single scan by ID."""
+    try:
+        key = f"users/{user_id}/scans/{scan_id}.json"
+        obj = _s3().get_object(Bucket=bucket, Key=key)
+        return json.loads(obj["Body"].read())
+    except Exception:
+        return None
+
+
+def save_message(
+    user_id: str,
+    message: str,
+    role: str,
+    bucket: str,
+    scan_reference: dict | None = None,
+    financial_metadata: dict | None = None,
+    session_id: str | None = None,
+) -> None:
+    """Save a message to the conversation history in S3 with multimodal support.
+
+    Stores messages at users/{user_id}/conversations/history.json
+
+    Schema v2 (Multimodal):
+    {
+        "schema_version": 2,
+        "messages": [
+            {
+                "role": "user"|"assistant",
+                "content": "message text",
+                "timestamp": "ISO8601",
+                "scan_reference": {"scan_id": "abc123", "product_name": "...", "category": "..."} | null,
+                "financial_metadata": {"psychology_cost": 15.50, "base_price": 12.99, ...} | null,
+                "session_id": "session_xxx" | null
+            }
+        ]
+    }
+    """
+    key = f"users/{user_id}/conversations/history.json"
+    timestamp = datetime.utcnow().isoformat()
+
+    new_message = {
+        "role": role,
+        "content": message,
+        "timestamp": timestamp,
+        "scan_reference": scan_reference,
+        "financial_metadata": financial_metadata,
+        "session_id": session_id,
+    }
+
+    # Load existing history or create new
+    try:
+        obj = _s3().get_object(Bucket=bucket, Key=key)
+        history = json.loads(obj["Body"].read())
+        # Migrate old schema if needed
+        if "schema_version" not in history:
+            history["schema_version"] = 2
+    except Exception:
+        history = {"schema_version": 2, "messages": []}
+
+    # Append new message
+    history["messages"].append(new_message)
+
+    # Save back to S3
+    _s3().put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=json.dumps(history),
+        ContentType="application/json"
+    )
+
+
+def get_conversation_history(user_id: str, bucket: str, limit: int = 20) -> list:
+    """Retrieve the last N messages from conversation history.
+
+    Returns a list of message dicts with role, content, and timestamp.
+    """
+    key = f"users/{user_id}/conversations/history.json"
+
+    try:
+        obj = _s3().get_object(Bucket=bucket, Key=key)
+        history = json.loads(obj["Body"].read())
+        messages = history.get("messages", [])
+        # Return the last `limit` messages
+        return messages[-limit:] if len(messages) > limit else messages
+    except Exception:
+        return []
+
+
+def get_conversation_sessions(user_id: str, bucket: str) -> list:
+    """Get a summary of all conversation sessions for a user.
+
+    Groups messages by session_id and returns metadata for each session.
+    Messages without a session_id are grouped under "default".
+
+    Returns a list of session summaries sorted by most recent first:
+    [
+        {
+            "session_id": "session_xxx",
+            "title": "First user message truncated...",
+            "message_count": 10,
+            "last_message_time": "2026-05-08T12:00:00",
+            "first_message_preview": "Full first user message"
+        }
+    ]
+    """
+    key = f"users/{user_id}/conversations/history.json"
+
+    try:
+        obj = _s3().get_object(Bucket=bucket, Key=key)
+        history = json.loads(obj["Body"].read())
+        messages = history.get("messages", [])
+    except Exception:
+        return []
+
+    if not messages:
+        return []
+
+    # Group messages by session_id
+    sessions: dict[str, list] = {}
+    for msg in messages:
+        session_id = msg.get("session_id") or "default"
+        if session_id not in sessions:
+            sessions[session_id] = []
+        sessions[session_id].append(msg)
+
+    # Build session summaries
+    summaries = []
+    for session_id, session_messages in sessions.items():
+        # Find first user message for title/preview
+        first_user_msg = next(
+            (m for m in session_messages if m.get("role") == "user"),
+            None
+        )
+        first_message_preview = first_user_msg.get("content", "") if first_user_msg else ""
+
+        # Truncate title to ~50 chars
+        title = first_message_preview[:50]
+        if len(first_message_preview) > 50:
+            title = title.rstrip() + "..."
+
+        # Get the last message timestamp
+        last_message_time = session_messages[-1].get("timestamp", "")
+
+        summaries.append({
+            "session_id": session_id,
+            "title": title or "Untitled conversation",
+            "message_count": len(session_messages),
+            "last_message_time": last_message_time,
+            "first_message_preview": first_message_preview,
+        })
+
+    # Sort by most recent first
+    summaries.sort(key=lambda x: x.get("last_message_time", ""), reverse=True)
+
+    return summaries
+
+
+def get_session_messages(user_id: str, session_id: str, bucket: str) -> list:
+    """Get all messages for a specific session_id.
+
+    Args:
+        user_id: The user's ID
+        session_id: The session ID to filter by (use "default" for messages without session_id)
+        bucket: S3 bucket name
+
+    Returns:
+        List of messages for the specified session, or empty list if none found.
+    """
+    key = f"users/{user_id}/conversations/history.json"
+
+    try:
+        obj = _s3().get_object(Bucket=bucket, Key=key)
+        history = json.loads(obj["Body"].read())
+        messages = history.get("messages", [])
+    except Exception:
+        return []
+
+    # Filter messages by session_id
+    # Messages with no session_id match "default"
+    return [
+        msg for msg in messages
+        if (msg.get("session_id") or "default") == session_id
+    ]
+
+
+def update_scan(user_id: str, scan_id: str, updates: dict, bucket: str) -> dict | None:
+    """Update a scan record with new values."""
+    scan = get_scan(user_id, scan_id, bucket)
+    if not scan:
+        return None
+
+    scan.update(updates)
+    scan["updated_at"] = datetime.utcnow().isoformat()
+
+    key = f"users/{user_id}/scans/{scan_id}.json"
+    _s3().put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=json.dumps(scan),
+        ContentType="application/json"
+    )
+    return scan
+
+
+app = FastAPI()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Flush any pending Langfuse traces on shutdown."""
+    flush_langfuse()
+    logger.info("Langfuse traces flushed on shutdown")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+BUCKET = os.environ["FINCORE_S3_BUCKET"]
+
+
+class ChatRequest(BaseModel):
+    user_id: str
+    message: str
+    scan_id: str | None = None  # Optional: ID of a recent product scan to discuss
+    scan_data: dict | None = None  # Optional: scan details (product_name, estimated_price, etc.)
+    session_id: str | None = None  # Optional: session ID for Langfuse tracing continuity
+
+
+class ProfileRequest(BaseModel):
+    user_id: str
+    name: str
+    big_five: dict  # {"openness": 75, "conscientiousness": 60, "extraversion": 80, "agreeableness": 55, "neuroticism": 40}
+    email: str | None = None
+    auth_provider: str = "anonymous"  # values: "anonymous", "google", "apple", "microsoft"
+
+
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
+
+
+class SurveyRequest(BaseModel):
+    user_id: str
+    name: str | None = None
+    answers: list[str]  # 15 letters, e.g. ["A", "C", "B", ...]
+
+
+@app.post("/score")
+def submit_survey(req: SurveyRequest):
+    try:
+        big_five = score_survey(req.answers)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    profile = {"user_id": req.user_id, "name": req.name, "big_five": big_five}
+    save_profile(req.user_id, profile, BUCKET)
+    return {"big_five": big_five}
+
+
+@app.post("/profile")
+def upsert_profile(req: ProfileRequest):
+    save_profile(req.user_id, req.model_dump(), BUCKET)
+    return {"status": "ok"}
+
+
+@app.get("/profile/{user_id}")
+def fetch_profile(user_id: str):
+    profile = get_profile(user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return profile
+
+
+@app.get("/profile/{user_id}/insights")
+async def get_insights(user_id: str):
+    """Generate personalised 'How Faith Will Help You' insights based on OCEAN scores."""
+    profile = get_profile(user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    big_five = profile.get("big_five", {})
+    if not big_five:
+        raise HTTPException(status_code=400, detail="Complete the quiz first")
+
+    # Generate insights using Claude
+    insights = await generate_insights(big_five, profile.get("name", "User"))
+    return {"insights": insights}
+
+
+@app.get("/users/{user_id}")
+def get_user(user_id: str):
+    """Return the full user object (profile + metadata)."""
+    profile = get_profile(user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "user_id": user_id,
+        "profile": profile,
+        "metadata": {
+            "auth_provider": profile.get("auth_provider", "anonymous"),
+            "email": profile.get("email"),
+        },
+    }
+
+
+@app.get("/users/{user_id}/scans")
+def get_scans(user_id: str, limit: int = 10):
+    """Get recent scans for a user."""
+    scans = get_user_scans(user_id, BUCKET, limit)
+    return {"scans": scans, "count": len(scans)}
+
+
+@app.get("/users/{user_id}/conversations")
+def get_conversations(user_id: str, limit: int = 20, sessions: bool = False):
+    """Get conversation history for a user.
+
+    Args:
+        user_id: The user's ID
+        limit: Maximum number of messages to return (only used when sessions=False)
+        sessions: If True, return grouped session summaries instead of flat messages
+
+    Returns:
+        If sessions=False (default): {"messages": [...], "count": N}
+        If sessions=True: {"sessions": [...], "count": N}
+    """
+    if sessions:
+        session_list = get_conversation_sessions(user_id, BUCKET)
+        return {"sessions": session_list, "count": len(session_list)}
+
+    messages = get_conversation_history(user_id, BUCKET, limit)
+    return {"messages": messages, "count": len(messages)}
+
+
+@app.get("/users/{user_id}/conversations/{session_id}")
+def get_conversation_by_session(user_id: str, session_id: str):
+    """Get all messages for a specific conversation session.
+
+    Args:
+        user_id: The user's ID
+        session_id: The session ID (use "default" for messages without a session_id)
+
+    Returns:
+        {"messages": [...], "count": N, "session_id": "..."}
+    """
+    messages = get_session_messages(user_id, session_id, BUCKET)
+    return {"messages": messages, "count": len(messages), "session_id": session_id}
+
+
+class ScanUpdateRequest(BaseModel):
+    estimated_price: float | None = None
+
+
+@app.patch("/users/{user_id}/scans/{scan_id}")
+def patch_scan(user_id: str, scan_id: str, req: ScanUpdateRequest):
+    """Update a scan record (e.g., user-corrected price)."""
+    updates = req.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    updated = update_scan(user_id, scan_id, updates, BUCKET)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    return {"status": "ok", "scan": updated}
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    # Load conversation history for THIS session only
+    if req.session_id:
+        conversation_history = await asyncio.to_thread(
+            get_session_messages, req.user_id, req.session_id, BUCKET
+        )
+    else:
+        # Fallback to old behavior if no session_id (shouldn't happen)
+        conversation_history = await asyncio.to_thread(
+            get_conversation_history, req.user_id, BUCKET, 20
+        )
+
+    # Build multimodal metadata from scan context
+    scan_reference = None
+    financial_metadata = None
+    if req.scan_data:
+        scan_reference = {
+            "scan_id": req.scan_id,
+            "product_name": req.scan_data.get("product_name"),
+            "category": req.scan_data.get("category"),
+        }
+        # Extract financial metadata if present
+        if req.scan_data.get("psychology_cost") or req.scan_data.get("estimated_price"):
+            financial_metadata = {
+                "psychology_cost": req.scan_data.get("psychology_cost"),
+                "base_price": req.scan_data.get("estimated_price"),
+                "overall_score": req.scan_data.get("overall_score"),
+                "verdict": req.scan_data.get("verdict"),
+            }
+
+    # Save user message with multimodal context
+    await asyncio.to_thread(
+        save_message,
+        req.user_id,
+        req.message,
+        "user",
+        BUCKET,
+        scan_reference=scan_reference,
+        financial_metadata=financial_metadata,
+        session_id=req.session_id,
+    )
+
+    async def generate():
+        full_response = []
+        async for chunk in stream_coach_response(
+            req.user_id,
+            req.message,
+            BUCKET,
+            conversation_history,
+            scan_id=req.scan_id,
+            scan_data=req.scan_data,
+            session_id=req.session_id,
+        ):
+            full_response.append(chunk)
+            # JSON-encode the text so embedded newlines can't break the SSE
+            # line format (each SSE event must fit on a single "data:" line).
+            yield f"data: {json.dumps(chunk)}\n\n"
+
+        # Save assistant response after streaming completes (with same scan context)
+        assistant_message = "".join(full_response)
+        if assistant_message:
+            await asyncio.to_thread(
+                save_message,
+                req.user_id,
+                assistant_message,
+                "assistant",
+                BUCKET,
+                scan_reference=scan_reference,
+                financial_metadata=financial_metadata,
+                session_id=req.session_id,
+            )
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+async def analyze(req: AnalyzeRequest):
+    """Analyse a product image via AWS Bedrock and return a financial score."""
+    # Generate scan_id upfront so we can pass it to tracing
+    scan_id = str(uuid.uuid4())[:8] if req.user_id else None
+
+    # Lookup user_name from profile if not provided (for Langfuse tracing)
+    user_name = req.user_name
+    if req.user_id and not user_name:
+        try:
+            profile = get_profile(req.user_id, BUCKET)
+            user_name = profile.get("name") if profile else None
+        except Exception:
+            pass  # Fallback to user_id in tracing
+
+    try:
+        result = analyze_image(
+            image_base64=req.image_base64,
+            media_type=req.media_type,
+            user_context=req.user_context,
+            aws_region=os.getenv("AWS_REGION", "eu-west-2"),
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            bedrock_model_id=os.getenv(
+                "BEDROCK_IMAGE_MODEL_ID",
+                "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            ),
+            user_id=req.user_id,
+            user_name=user_name,
+            scan_id=scan_id,
+            session_id=req.session_id,
+        )
+        analysis = AnalysisResult(**result)
+
+        # Save scan to S3 if user_id provided
+        if req.user_id and scan_id:
+            # Use the pre-generated scan_id for consistency
+            key = f"users/{req.user_id}/scans/{scan_id}.json"
+            from datetime import datetime
+            scan_record = {
+                "scan_id": scan_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "user_id": req.user_id,
+                **result
+            }
+            try:
+                _s3().put_object(
+                    Bucket=BUCKET,
+                    Key=key,
+                    Body=json.dumps(scan_record),
+                    ContentType="application/json"
+                )
+                logger.info(f"Saved scan {scan_id} for user {req.user_id}")
+            except Exception as e:
+                logger.error(f"Failed to save scan to S3: {e}")
+
+        return AnalyzeResponse(success=True, analysis=analysis, scan_id=scan_id)
+    except Exception as exc:
+        logger.exception("Image analysis failed")
+        return AnalyzeResponse(success=False, error=str(exc))
+
+
+@app.post("/price-check", response_model=PriceCheckResponse)
+async def price_check(req: PriceCheckRequest):
+    """Look up supermarket prices for a product barcode."""
+    try:
+        prices = await price_matcher.fetch_supermarket_prices(req.barcode)
+    except ValueError as exc:
+        return PriceCheckResponse(success=False, barcode=req.barcode, error=str(exc))
+    except Exception as exc:
+        logger.exception("Price check failed")
+        return PriceCheckResponse(success=False, barcode=req.barcode, error="Unexpected error during price lookup")
+
+    if not prices:
+        return PriceCheckResponse(
+            success=True,
+            barcode=req.barcode,
+            prices=[],
+            error="No prices found for this barcode",
+        )
+
+    store_prices = [StorePrice(**p) for p in prices]
+    cheapest = store_prices[0]
+    return PriceCheckResponse(
+        success=True,
+        barcode=req.barcode,
+        cheapest_store=cheapest.store,
+        cheapest_price=cheapest.price,
+        prices=store_prices,
+    )
+
+
+@app.post("/psychology-cost")
+async def get_psychology_cost(user_id: str, base_price: float):
+    profile = get_profile(user_id, BUCKET)
+    if not profile or not profile.get("big_five"):
+        raise HTTPException(status_code=400, detail="Complete quiz first")
+
+    result = calculate_psychology_cost(base_price, profile["big_five"])
+    return result
+
+
+class EmotionalTaxBreakdown(BaseModel):
+    scan_id: str
+    timestamp: str
+    base_price: float
+    psychology_cost: float
+    emotional_tax: float
+    product_name: str | None = None
+
+
+class EmotionalTaxResponse(BaseModel):
+    total_tax: float
+    scan_count: int
+    breakdown: list[EmotionalTaxBreakdown]
+
+
+@app.get("/users/{user_id}/emotional-tax", response_model=EmotionalTaxResponse)
+def get_emotional_tax(user_id: str, limit: int = 5):
+    """Calculate the total emotional/personality tax paid across recent scans."""
+    profile = get_profile(user_id, BUCKET)
+    if not profile or not profile.get("big_five"):
+        raise HTTPException(status_code=400, detail="Complete quiz first")
+
+    scans = get_user_scans(user_id, BUCKET, limit=limit)
+
+    breakdown = []
+    total_tax = 0.0
+
+    for scan in scans:
+        base_price = scan.get("estimated_price") or scan.get("base_price")
+        if base_price is None:
+            continue
+
+        # Calculate psychology cost using the math_utils logic
+        result = calculate_psychology_cost(base_price, profile["big_five"])
+        psychology_cost = result["psychology_cost"]
+        emotional_tax = psychology_cost - base_price
+
+        total_tax += emotional_tax
+        breakdown.append(EmotionalTaxBreakdown(
+            scan_id=scan.get("scan_id", "unknown"),
+            timestamp=scan.get("timestamp", ""),
+            base_price=base_price,
+            psychology_cost=psychology_cost,
+            emotional_tax=round(emotional_tax, 2),
+            product_name=scan.get("product_name"),
+        ))
+
+    return EmotionalTaxResponse(
+        total_tax=round(total_tax, 2),
+        scan_count=len(breakdown),
+        breakdown=breakdown,
+    )
+
+
+class UploadScanImageRequest(BaseModel):
+    image_base64: str  # Base64-encoded image data (without data URI prefix)
+    user_id: str
+    scan_id: str
+
+
+class UploadScanImageResponse(BaseModel):
+    success: bool
+    s3_url: str | None = None
+    error: str | None = None
+
+
+@app.post("/upload-scan-image", response_model=UploadScanImageResponse)
+async def upload_scan_image(req: UploadScanImageRequest):
+    """Upload a scan image to S3 at users/{user_id}/scans/{scan_id}/original.jpg."""
+    try:
+        # Decode base64 image
+        try:
+            image_bytes = base64.b64decode(req.image_base64)
+        except Exception:
+            return UploadScanImageResponse(
+                success=False,
+                error="Invalid base64 image data"
+            )
+
+        # Construct S3 key
+        s3_key = f"users/{req.user_id}/scans/{req.scan_id}/original.jpg"
+
+        # Upload to S3
+        _s3().put_object(
+            Bucket=BUCKET,
+            Key=s3_key,
+            Body=image_bytes,
+            ContentType="image/jpeg"
+        )
+
+        # Construct the S3 URL
+        region = os.getenv("AWS_REGION", "us-east-1")
+        s3_url = f"https://{BUCKET}.s3.{region}.amazonaws.com/{s3_key}"
+
+        # Optionally update the scan record with the image URL
+        scan = get_scan(req.user_id, req.scan_id, BUCKET)
+        if scan:
+            update_scan(req.user_id, req.scan_id, {"image_url": s3_url}, BUCKET)
+
+        return UploadScanImageResponse(success=True, s3_url=s3_url)
+
+    except Exception as exc:
+        logger.exception("Failed to upload scan image")
+        return UploadScanImageResponse(
+            success=False,
+            error=f"Upload failed: {str(exc)}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Waitlist Endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+class WaitlistRequest(BaseModel):
+    email: str
+    feature: str  # 'banking' or 'analytics'
+
+
+class WaitlistResponse(BaseModel):
+    success: bool
+    message: str | None = None
+
+
+@app.post("/waitlist", response_model=WaitlistResponse)
+async def add_to_waitlist(req: WaitlistRequest):
+    """
+    Add an email to the feature waitlist.
+    Stores in S3 at users/global/waitlist.json as a JSON array.
+
+    Schema:
+    {
+      "entries": [
+        {
+          "email": "user@example.com",
+          "feature": "banking",
+          "timestamp": "2026-05-08T22:30:00Z"
+        }
+      ]
+    }
+    """
+    try:
+        s3_key = "users/global/waitlist.json"
+
+        # Load existing waitlist or create new
+        try:
+            response = _s3().get_object(Bucket=BUCKET, Key=s3_key)
+            waitlist = json.loads(response["Body"].read().decode("utf-8"))
+        except _s3().exceptions.NoSuchKey:
+            waitlist = {"entries": []}
+        except Exception:
+            waitlist = {"entries": []}
+
+        # Check for duplicate
+        existing = any(
+            e["email"] == req.email and e["feature"] == req.feature
+            for e in waitlist["entries"]
+        )
+        if existing:
+            return WaitlistResponse(success=True, message="Already on waitlist")
+
+        # Add new entry
+        waitlist["entries"].append({
+            "email": req.email,
+            "feature": req.feature,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        })
+
+        # Save back to S3
+        _s3().put_object(
+            Bucket=BUCKET,
+            Key=s3_key,
+            Body=json.dumps(waitlist, indent=2),
+            ContentType="application/json"
+        )
+
+        logger.info(f"[waitlist] Added {req.email} for {req.feature}")
+        return WaitlistResponse(success=True, message="Added to waitlist")
+
+    except Exception as exc:
+        logger.exception("Failed to add to waitlist")
+        raise HTTPException(status_code=500, detail=str(exc))
