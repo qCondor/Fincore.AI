@@ -46,9 +46,9 @@ export default function SplashScreen() {
       ]),
     ]).start();
 
-    // Navigate after 2.5s - skip onboarding, go straight to main app
+    // Navigate after 2.5s to login/onboarding
     const timer = setTimeout(() => {
-      router.replace('/(tabs)');
+      router.replace('/login');
     }, 2500);
 
     return () => clearTimeout(timer);
