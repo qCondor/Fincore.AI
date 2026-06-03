@@ -25,4 +25,4 @@ secrets.json
 
 # IDE
 .idea/
-.vscode/
+.vscode/.claude/settings.local.json

@@ -11,15 +11,24 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop, ClipPath, Rect, G } from 'react-native-svg';
+import Svg, { Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop, ClipPath, Rect, G, Circle } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { ComingSoonModal } from '../../components/ComingSoonModal';
 import { useProfile } from '../../hooks/useProfile';
 import { useUser } from '../../contexts/UserContext';
+import {
+  PersonalDetails,
+  SecurityPrivacy,
+  Notifications,
+  PaymentMethods,
+  Preferences,
+  HelpSupport,
+} from '../../components/settings';
 
 function WaveBackground() {
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -399,7 +408,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userId } = useUser();
-  const { initials, profile } = useProfile({ userId: userId ?? undefined });
+  const { initials, profile, refetch } = useProfile({ userId: userId ?? undefined });
 
   const oceanTraits = React.useMemo(
     () => buildOceanTraits(profile?.big_five ?? null),
@@ -411,7 +420,37 @@ export default function ProfileScreen() {
   const [inputText, setInputText] = useState('');
   const [navExpanded, setNavExpanded] = useState(false);
   const [comingSoonModal, setComingSoonModal] = useState<{ open: boolean; feature: 'banking' | 'analytics' | 'blueprint' | null }>({ open: false, feature: null });
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<'personal' | 'security' | 'notifications' | 'payments' | 'preferences' | 'help' | null>(null);
   const navSlide = useRef(new Animated.Value(-SCREEN_WIDTH)).current;
+  const settingsSlide = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+
+  const openSettingsMenu = () => {
+    setSettingsMenuOpen(true);
+    Animated.timing(settingsSlide, {
+      toValue: 0,
+      duration: 350,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeSettingsMenu = () => {
+    Animated.timing(settingsSlide, {
+      toValue: SCREEN_WIDTH,
+      duration: 350,
+      useNativeDriver: true,
+    }).start(() => {
+      setSettingsMenuOpen(false);
+    });
+  };
+
+  const handleSignOut = async () => {
+    closeSettingsMenu();
+    await clearUser();
+    router.replace('/login');
+  };
+
+  const { clearUser } = useUser();
 
   const toggleNav = (show: boolean) => {
     setNavExpanded(show);
@@ -458,7 +497,7 @@ export default function ProfileScreen() {
               {profilePage === 0 ? 'OCEAN Personality Assessment' : 'Blueprint'}
             </Text>
           </View>
-          <TouchableOpacity style={styles.avatarButton} onPress={() => {}}>
+          <TouchableOpacity style={styles.avatarButton} onPress={openSettingsMenu}>
             <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
               <View style={styles.avatarShine} />
               <Text style={styles.avatarText}>{initials}</Text>
@@ -761,7 +800,209 @@ export default function ProfileScreen() {
             : 'See the full context behind your spending patterns and get a personalised action plan.'
         }
       />
+
+      {/* Settings Menu Overlay */}
+      {settingsMenuOpen && (
+        <Animated.View
+          style={[
+            styles.settingsOverlay,
+            { transform: [{ translateX: settingsSlide }] },
+          ]}
+        >
+          <View style={[styles.settingsMenu, { paddingTop: insets.top + 16 }]}>
+            <View style={styles.settingsHeader}>
+              <TouchableOpacity style={styles.settingsCloseButton} onPress={closeSettingsMenu}>
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+                  <Path d="M18 6L6 18M6 6l12 12" />
+                </Svg>
+              </TouchableOpacity>
+              <Text style={styles.settingsTitle}>Settings</Text>
+              <View style={{ width: 42 }} />
+            </View>
+
+            <View style={styles.settingsAvatarSection}>
+              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.settingsAvatar}>
+                <Text style={styles.settingsAvatarText}>{initials}</Text>
+              </LinearGradient>
+              <Text style={styles.settingsName}>{profile?.name || 'User'}</Text>
+              <Text style={styles.settingsEmail}>{profile?.email || 'user@fincore.one'}</Text>
+            </View>
+
+            <View style={styles.settingsMenuItems}>
+              <SettingsMenuItem
+                icon={<UserSettingsIcon />}
+                label="Personal Details"
+                onPress={() => setSettingsPage('personal')}
+              />
+              <SettingsMenuItem
+                icon={<ShieldSettingsIcon />}
+                label="Security & Privacy"
+                onPress={() => setSettingsPage('security')}
+              />
+              <SettingsMenuItem
+                icon={<BellSettingsIcon />}
+                label="Notifications"
+                onPress={() => setSettingsPage('notifications')}
+              />
+              <SettingsMenuItem
+                icon={<CreditCardSettingsIcon />}
+                label="Payment Methods"
+                onPress={() => setSettingsPage('payments')}
+              />
+              <SettingsMenuItem
+                icon={<SlidersSettingsIcon />}
+                label="Preferences"
+                onPress={() => setSettingsPage('preferences')}
+              />
+              <SettingsMenuItem
+                icon={<HelpCircleSettingsIcon />}
+                label="Help & Support"
+                onPress={() => setSettingsPage('help')}
+              />
+              <SettingsMenuItem
+                icon={<LogOutSettingsIcon />}
+                label="Sign Out"
+                onPress={handleSignOut}
+                danger
+                isLast
+              />
+            </View>
+          </View>
+        </Animated.View>
+      )}
+
+      {/* Settings Pages */}
+      <Modal visible={settingsPage === 'personal'} animationType="slide" presentationStyle="fullScreen">
+        <PersonalDetails
+          onBack={() => setSettingsPage(null)}
+          initials={initials}
+          userId={userId ?? undefined}
+          profile={profile}
+          onProfileUpdate={refetch}
+        />
+      </Modal>
+      <Modal visible={settingsPage === 'security'} animationType="slide" presentationStyle="fullScreen">
+        <SecurityPrivacy
+          onBack={() => setSettingsPage(null)}
+          onDeleteAccount={() => {
+            setSettingsPage(null);
+            closeSettingsMenu();
+            clearUser();
+            router.replace('/login');
+          }}
+        />
+      </Modal>
+      <Modal visible={settingsPage === 'notifications'} animationType="slide" presentationStyle="fullScreen">
+        <Notifications onBack={() => setSettingsPage(null)} />
+      </Modal>
+      <Modal visible={settingsPage === 'payments'} animationType="slide" presentationStyle="fullScreen">
+        <PaymentMethods onBack={() => setSettingsPage(null)} />
+      </Modal>
+      <Modal visible={settingsPage === 'preferences'} animationType="slide" presentationStyle="fullScreen">
+        <Preferences onBack={() => setSettingsPage(null)} />
+      </Modal>
+      <Modal visible={settingsPage === 'help'} animationType="slide" presentationStyle="fullScreen">
+        <HelpSupport
+          onBack={() => setSettingsPage(null)}
+          onTalkToFaith={() => {
+            setSettingsPage(null);
+            closeSettingsMenu();
+            router.push('/(tabs)/faith');
+          }}
+        />
+      </Modal>
     </KeyboardAvoidingView>
+  );
+}
+
+function UserSettingsIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+      <Path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+      <Circle cx={12} cy={7} r={4} />
+    </Svg>
+  );
+}
+
+function ShieldSettingsIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+      <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </Svg>
+  );
+}
+
+function BellSettingsIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+      <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
+    </Svg>
+  );
+}
+
+function CreditCardSettingsIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+      <Rect x={1} y={4} width={22} height={16} rx={2} ry={2} />
+      <Line x1={1} y1={10} x2={23} y2={10} />
+    </Svg>
+  );
+}
+
+function SlidersSettingsIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+      <Line x1={4} y1={21} x2={4} y2={14} />
+      <Line x1={4} y1={10} x2={4} y2={3} />
+      <Line x1={12} y1={21} x2={12} y2={12} />
+      <Line x1={12} y1={8} x2={12} y2={3} />
+      <Line x1={20} y1={21} x2={20} y2={16} />
+      <Line x1={20} y1={12} x2={20} y2={3} />
+      <Line x1={1} y1={14} x2={7} y2={14} />
+      <Line x1={9} y1={8} x2={15} y2={8} />
+      <Line x1={17} y1={16} x2={23} y2={16} />
+    </Svg>
+  );
+}
+
+function HelpCircleSettingsIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+      <Circle cx={12} cy={12} r={10} />
+      <Path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01" />
+    </Svg>
+  );
+}
+
+function LogOutSettingsIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#FF453A" strokeWidth={2}>
+      <Path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+    </Svg>
+  );
+}
+
+interface SettingsMenuItemProps {
+  icon: React.ReactNode;
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+  isLast?: boolean;
+}
+
+function SettingsMenuItem({ icon, label, onPress, danger = false, isLast = false }: SettingsMenuItemProps) {
+  return (
+    <TouchableOpacity
+      style={[styles.settingsMenuItem, !isLast && styles.settingsMenuItemBorder]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.settingsMenuItemIcon}>{icon}</View>
+      <Text style={[styles.settingsMenuItemLabel, danger && styles.settingsMenuItemDanger]}>{label}</Text>
+      <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={2}>
+        <Path d="M9 18l6-6-6-6" />
+      </Svg>
+    </TouchableOpacity>
   );
 }
 
@@ -1185,5 +1426,97 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,
+  },
+  settingsOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1001,
+  },
+  settingsMenu: {
+    flex: 1,
+    backgroundColor: '#005FCC',
+    paddingHorizontal: 20,
+  },
+  settingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  settingsCloseButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    textAlign: 'center',
+    marginRight: 42,
+  },
+  settingsAvatarSection: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  settingsAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.3)',
+    marginBottom: 12,
+  },
+  settingsAvatarText: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  settingsName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  settingsEmail: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 4,
+  },
+  settingsMenuItems: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+  },
+  settingsMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  settingsMenuItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  settingsMenuItemIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  settingsMenuItemLabel: {
+    flex: 1,
+    fontSize: 16,
+    color: '#fff',
+  },
+  settingsMenuItemDanger: {
+    color: '#FF453A',
   },
 });
