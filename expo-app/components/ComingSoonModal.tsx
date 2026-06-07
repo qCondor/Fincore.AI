@@ -13,12 +13,13 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Line } from 'react-native-svg';
+import { API_BASE_URL } from '../config';
 
 interface ComingSoonModalProps {
   visible: boolean;
   onClose: () => void;
   feature: string;
-  featureKey: 'banking' | 'analytics' | 'blueprint';
+  featureKey: 'banking' | 'analytics' | 'blueprint' | 'premium';
   description: string;
 }
 
@@ -64,7 +65,7 @@ export function ComingSoonModal({
 
     setIsSubmitting(true);
     try {
-      await fetch('http://192.168.1.221:8000/waitlist', {
+      await fetch(`${API_BASE_URL}/waitlist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, feature: featureKey }),

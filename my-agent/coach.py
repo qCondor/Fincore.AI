@@ -7,7 +7,7 @@ import threading
 import uuid
 from typing import Optional, AsyncGenerator
 import boto3
-from tracing import get_chat_client
+from tracing import get_chat_client, get_chat_prompt
 
 logger = logging.getLogger("fincore.coach")
 
@@ -15,24 +15,21 @@ logger = logging.getLogger("fincore.coach")
 BEDROCK_MODEL = os.getenv("BEDROCK_MODEL", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 
-def build_system_prompt(profile: dict, scan_data: Optional[dict] = None) -> str:
-    scores = profile.get("big_five", {})
+def _build_personality_traits(scores: dict) -> tuple[str, list]:
+    """Build personality trait insights from OCEAN scores.
+
+    Returns:
+        Tuple of (traits_text, trait_labels) where traits_text is bullet points
+        and trait_labels is a list of (trait_name, driver) tuples for scan context.
+    """
     o = scores.get("openness", 50)
     c = scores.get("conscientiousness", 50)
     e = scores.get("extraversion", 50)
     a = scores.get("agreeableness", 50)
     n = scores.get("neuroticism", 50)
 
-    # Always include actual scores so Faith knows them
-    scores_summary = f"""OCEAN Scores (0-100 scale):
-- Openness: {o}
-- Conscientiousness: {c}
-- Extraversion: {e}
-- Agreeableness: {a}
-- Neuroticism: {n}"""
-
     traits = []
-    trait_labels = []  # For scan context: which traits are notable
+    trait_labels = []
 
     # Openness insights
     if o >= 70:
@@ -95,26 +92,24 @@ def build_system_prompt(profile: dict, scan_data: Optional[dict] = None) -> str:
         trait_labels.append(("low neuroticism", "low-stakes enjoyment without overthinking"))
 
     traits_text = "\n".join(f"- {t}" for t in traits)
-    name = profile.get("name", "the user")
+    return traits_text, trait_labels
 
-    # Build scan context if provided
-    scan_context = ""
-    if scan_data:
-        product_name = scan_data.get("product_name", "an item")
-        estimated_price = scan_data.get("estimated_price")
-        psychology_cost = scan_data.get("psychology_cost", "")
-        category = scan_data.get("category", "")
 
-        price_str = f"£{estimated_price:.2f}" if estimated_price else "unknown price"
+def _build_scan_context(scan_data: dict, trait_labels: list) -> str:
+    """Build scan context block for the prompt."""
+    product_name = scan_data.get("product_name", "an item")
+    estimated_price = scan_data.get("estimated_price")
+    psychology_cost = scan_data.get("psychology_cost", "")
+    category = scan_data.get("category", "")
 
-        # Pick the most relevant trait for this purchase
-        trait_hint = ""
-        if trait_labels:
-            trait_name, trait_driver = trait_labels[0]  # Use the first notable trait
-            trait_hint = f"Given their {trait_name}, they may have been drawn to this because of {trait_driver}."
+    price_str = f"£{estimated_price:.2f}" if estimated_price else "unknown price"
 
-        scan_context = f"""
-IMPORTANT — SCAN CONTEXT:
+    trait_hint = ""
+    if trait_labels:
+        trait_name, trait_driver = trait_labels[0]
+        trait_hint = f"Given their {trait_name}, they may have been drawn to this because of {trait_driver}."
+
+    return f"""IMPORTANT — SCAN CONTEXT:
 The user just scanned a product: "{product_name}" ({price_str}).
 {f'Category: {category}' if category else ''}
 {f'Psychology insight: {psychology_cost}' if psychology_cost else ''}
@@ -122,8 +117,100 @@ The user just scanned a product: "{product_name}" ({price_str}).
 
 You MUST acknowledge this specific item in your opening. Start by referencing what they scanned.
 Example opener: "I noticed you were looking at that {price_str} {product_name}..."
-Then explore the psychological drivers behind the purchase urge, connecting it to their personality profile.
-"""
+Then explore the psychological drivers behind the purchase urge, connecting it to their personality profile."""
+
+
+def build_system_prompt(profile: dict, scan_data: Optional[dict] = None, personalized: bool = True) -> str:
+    """Build the system prompt for Faith.
+
+    Fetches the prompt template from Langfuse (faith-chat, production label) and
+    populates it with user-specific variables. Falls back to hardcoded prompt if
+    Langfuse is unavailable.
+
+    Args:
+        profile: User profile dict with big_five scores
+        scan_data: Optional scan context
+        personalized: If False, don't use personality-specific insights
+    """
+    # Check if user has disabled personalized insights
+    security_prefs = profile.get("security_prefs", {})
+    if security_prefs.get("personalizedInsights") is False:
+        personalized = False
+
+    scores = profile.get("big_five", {})
+    o = scores.get("openness", 50)
+    c = scores.get("conscientiousness", 50)
+    e = scores.get("extraversion", 50)
+    a = scores.get("agreeableness", 50)
+    n = scores.get("neuroticism", 50)
+
+    name = profile.get("name", "the user")
+    traits_text, trait_labels = _build_personality_traits(scores)
+
+    # Build scan context
+    scan_context = ""
+    if scan_data and personalized:
+        scan_context = _build_scan_context(scan_data, trait_labels)
+    elif scan_data and not personalized:
+        product_name = scan_data.get("product_name", "an item")
+        estimated_price = scan_data.get("estimated_price")
+        price_str = f"£{estimated_price:.2f}" if estimated_price else "unknown price"
+        scan_context = f"""SCAN CONTEXT:
+The user just scanned a product: "{product_name}" ({price_str}).
+Acknowledge this item and provide helpful financial guidance about the purchase."""
+
+    # Return generic prompt if personalized insights are disabled
+    if not personalized:
+        return f"""You are Faith, a friendly financial coach. You help users make better financial decisions with practical, actionable advice.
+
+Your style:
+- Warm and helpful
+- Focus on practical financial guidance
+- Provide clear, actionable suggestions
+- Use British English (pounds, not dollars)
+
+You are speaking with {name}.
+{scan_context}
+Guidelines:
+- Give helpful, practical financial advice
+- Keep responses concise (3-5 sentences unless more detail is needed)
+- Never give regulated financial advice — frame everything as guidance and suggest a professional for major decisions
+
+IMPORTANT: At the very end of EVERY response, include exactly 3 suggested follow-up questions or actions:
+[SUGGESTIONS]
+- First suggestion (short, 2-6 words)
+- Second suggestion (short, 2-6 words)
+- Third suggestion (short, 2-6 words)
+[/SUGGESTIONS]"""
+
+    # Try to fetch prompt from Langfuse
+    langfuse_template, _ = get_chat_prompt("faith-chat", label="production")
+
+    if langfuse_template:
+        # Populate the Langfuse template with variables
+        try:
+            prompt = langfuse_template.replace("{{user_name}}", name)
+            prompt = prompt.replace("{{openness}}", str(o))
+            prompt = prompt.replace("{{conscientiousness}}", str(c))
+            prompt = prompt.replace("{{extraversion}}", str(e))
+            prompt = prompt.replace("{{agreeableness}}", str(a))
+            prompt = prompt.replace("{{neuroticism}}", str(n))
+            prompt = prompt.replace("{{personality_traits}}", traits_text)
+            prompt = prompt.replace("{{scan_context}}", scan_context)
+            logger.info("Using Langfuse prompt template for faith-chat")
+            return prompt
+        except Exception as ex:
+            logger.warning(f"Failed to populate Langfuse template: {ex}, falling back to hardcoded")
+
+    # Fallback to hardcoded prompt
+    logger.info("Using hardcoded prompt template for faith-chat")
+
+    scores_summary = f"""OCEAN Scores (0-100 scale):
+- Openness: {o}
+- Conscientiousness: {c}
+- Extraversion: {e}
+- Agreeableness: {a}
+- Neuroticism: {n}"""
 
     return f"""You are Faith, a Financial Psychologist and personal money coach. You combine warmth with gentle challenge — you genuinely care about your clients, but you're not afraid to ask the difficult questions that help them grow.
 

@@ -25,6 +25,7 @@ from image_agent import analyze_image, SYSTEM_PROMPT, ANALYSIS_PROMPT
 from tracing import flush_all as flush_langfuse
 from image_models import (
     AnalyzeRequest,
+    AnalyzeTextRequest,
     AnalyzeResponse,
     AnalysisResult,
     ScoreBreakdown,
@@ -367,6 +368,18 @@ class ProfileRequest(BaseModel):
     auth_provider: str = "anonymous"  # values: "anonymous", "google", "apple", "microsoft"
 
 
+class ProfileUpdateRequest(BaseModel):
+    user_id: str
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    dob: str | None = None
+    address: str | None = None
+    occupation: str | None = None
+    nationality: str | None = None
+    auth_provider: str | None = None
+
+
 @app.get("/")
 def health_check():
     return {"status": "ok"}
@@ -393,6 +406,57 @@ def submit_survey(req: SurveyRequest):
 def upsert_profile(req: ProfileRequest):
     save_profile(req.user_id, req.model_dump(), BUCKET)
     return {"status": "ok"}
+
+
+@app.patch("/profile/{user_id}")
+def update_profile(user_id: str, req: ProfileUpdateRequest):
+    """Update specific profile fields without overwriting existing data."""
+    existing = get_profile(user_id, BUCKET) or {}
+
+    updates = req.model_dump(exclude_none=True, exclude={"user_id"})
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    merged = {**existing, **updates, "user_id": user_id}
+    save_profile(user_id, merged, BUCKET)
+    return {"status": "ok", "profile": merged}
+
+
+class ProfilePhotoRequest(BaseModel):
+    user_id: str
+    image_base64: str
+    media_type: str = "image/jpeg"
+
+
+@app.post("/profile/{user_id}/photo")
+def upload_profile_photo(user_id: str, req: ProfilePhotoRequest):
+    """Upload a profile photo for a user."""
+    import base64
+    from datetime import datetime
+
+    try:
+        image_data = base64.b64decode(req.image_base64)
+        extension = "jpg" if "jpeg" in req.media_type else req.media_type.split("/")[-1]
+        key = f"users/{user_id}/profile-photo.{extension}"
+
+        _s3().put_object(
+            Bucket=BUCKET,
+            Key=key,
+            Body=image_data,
+            ContentType=req.media_type,
+        )
+
+        photo_url = f"https://{BUCKET}.s3.amazonaws.com/{key}?t={int(datetime.utcnow().timestamp())}"
+
+        existing = get_profile(user_id, BUCKET) or {}
+        existing["photo_url"] = photo_url
+        save_profile(user_id, existing, BUCKET)
+
+        logger.info(f"Uploaded profile photo for user {user_id}")
+        return {"status": "ok", "photo_url": photo_url}
+    except Exception as e:
+        logger.exception("Failed to upload profile photo")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/profile/{user_id}")
@@ -433,6 +497,54 @@ def get_user(user_id: str):
             "email": profile.get("email"),
         },
     }
+
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: str):
+    """Delete all user data from S3 (GDPR/App Store compliance).
+
+    Deletes:
+    - users/{user_id}/profile.json
+    - users/{user_id}/scans/*
+    - users/{user_id}/conversations/*
+    - users/{user_id}/sessions.json
+    - Any other objects under users/{user_id}/
+    """
+    prefix = f"users/{user_id}/"
+    deleted_count = 0
+
+    try:
+        # List all objects with this prefix
+        paginator = _s3().get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=BUCKET, Prefix=prefix):
+            objects = page.get("Contents", [])
+            if not objects:
+                continue
+
+            # Delete in batches of 1000 (S3 limit)
+            delete_keys = [{"Key": obj["Key"]} for obj in objects]
+            _s3().delete_objects(
+                Bucket=BUCKET,
+                Delete={"Objects": delete_keys}
+            )
+            deleted_count += len(delete_keys)
+
+        logger.info(f"[GDPR] Deleted {deleted_count} objects for user {user_id}")
+
+        if deleted_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return {
+            "status": "ok",
+            "message": f"Account deleted. {deleted_count} objects removed.",
+            "deleted_count": deleted_count,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Failed to delete user {user_id}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/users/{user_id}/scans")
@@ -539,29 +651,17 @@ async def chat(req: ChatRequest):
         session_id=req.session_id,
     )
 
-    async def generate():
-        full_response = []
-        async for chunk in stream_coach_response(
-            req.user_id,
-            req.message,
-            BUCKET,
-            conversation_history,
-            scan_id=req.scan_id,
-            scan_data=req.scan_data,
-            session_id=req.session_id,
-        ):
-            full_response.append(chunk)
-            # JSON-encode the text so embedded newlines can't break the SSE
-            # line format (each SSE event must fit on a single "data:" line).
-            yield f"data: {json.dumps(chunk)}\n\n"
+    # Shared state for saving partial responses on disconnect
+    response_chunks: list[str] = []
 
-        # Save assistant response after streaming completes (with same scan context)
-        assistant_message = "".join(full_response)
-        if assistant_message:
+    async def save_partial_response():
+        """Save whatever was streamed so far."""
+        if response_chunks:
+            partial_message = "".join(response_chunks)
             await asyncio.to_thread(
                 save_message,
                 req.user_id,
-                assistant_message,
+                partial_message,
                 "assistant",
                 BUCKET,
                 scan_reference=scan_reference,
@@ -569,7 +669,45 @@ async def chat(req: ChatRequest):
                 session_id=req.session_id,
             )
 
-        yield "data: [DONE]\n\n"
+    async def generate():
+        try:
+            async for chunk in stream_coach_response(
+                req.user_id,
+                req.message,
+                BUCKET,
+                conversation_history,
+                scan_id=req.scan_id,
+                scan_data=req.scan_data,
+                session_id=req.session_id,
+            ):
+                response_chunks.append(chunk)
+                # JSON-encode the text so embedded newlines can't break the SSE
+                # line format (each SSE event must fit on a single "data:" line).
+                yield f"data: {json.dumps(chunk)}\n\n"
+
+            # Save assistant response after streaming completes (with same scan context)
+            assistant_message = "".join(response_chunks)
+            if assistant_message:
+                await asyncio.to_thread(
+                    save_message,
+                    req.user_id,
+                    assistant_message,
+                    "assistant",
+                    BUCKET,
+                    scan_reference=scan_reference,
+                    financial_metadata=financial_metadata,
+                    session_id=req.session_id,
+                )
+
+            yield "data: [DONE]\n\n"
+        except asyncio.CancelledError:
+            # Client disconnected mid-stream - save partial response
+            await save_partial_response()
+            raise
+        except GeneratorExit:
+            # Generator closed - save partial response
+            await save_partial_response()
+            raise
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -633,6 +771,115 @@ async def analyze(req: AnalyzeRequest):
         return AnalyzeResponse(success=True, analysis=analysis, scan_id=scan_id)
     except Exception as exc:
         logger.exception("Image analysis failed")
+        return AnalyzeResponse(success=False, error=str(exc))
+
+
+TEXT_ANALYSIS_PROMPT = """You are a financial coach analysing a product that a user is considering purchasing.
+The user has described the product as: "{product_description}"
+
+Analyse this product from a financial perspective. Consider:
+- What this product typically costs
+- Whether it's a need vs want
+- Value for money considerations
+- Budget impact for an average person
+
+Respond with a JSON object matching this exact schema:
+{{
+  "product_identified": "string - the product name/description",
+  "product_name": "string - specific product name if identifiable",
+  "product_brand": "string or null - brand if known",
+  "product_category": "string - category like 'food', 'electronics', 'clothing', etc",
+  "overall_score": "integer 0-100 - financial wisdom score (higher = better purchase)",
+  "grade": "string - A/B/C/D/F grade",
+  "verdict": "string - one sentence verdict on the purchase",
+  "color": "string - 'green' (good), 'amber' (caution), or 'red' (bad)",
+  "breakdown": {{
+    "value_for_money": "integer 0-100",
+    "necessity": "integer 0-100",
+    "budget_impact": "integer 0-100"
+  }},
+  "recommendations": ["array of 2-3 actionable recommendations"],
+  "financial_insight": "string - 2-3 sentences of financial wisdom about this purchase",
+  "alternatives": ["array of 1-2 cheaper or better alternatives"],
+  "estimated_price": "float or null - estimated price in GBP"
+}}
+
+Use British English. Be practical and helpful, not preachy."""
+
+
+@app.post("/analyze-text", response_model=AnalyzeResponse)
+async def analyze_text(req: AnalyzeTextRequest):
+    """Analyse a product from text description (no image required)."""
+    scan_id = str(uuid.uuid4())[:8] if req.user_id else None
+
+    user_name = req.user_name
+    if req.user_id and not user_name:
+        try:
+            profile = get_profile(req.user_id, BUCKET)
+            user_name = profile.get("name") if profile else None
+        except Exception:
+            pass
+
+    try:
+        import boto3
+
+        bedrock = boto3.client(
+            "bedrock-runtime",
+            region_name=os.getenv("AWS_REGION", "eu-west-2"),
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
+
+        prompt = TEXT_ANALYSIS_PROMPT.format(product_description=req.product_description)
+
+        response = bedrock.invoke_model(
+            modelId=os.getenv("BEDROCK_TEXT_MODEL_ID", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps({
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": prompt}],
+            }),
+        )
+
+        response_body = json.loads(response["body"].read())
+        content = response_body["content"][0]["text"]
+
+        # Parse JSON from response (handle markdown code blocks)
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0]
+
+        result = json.loads(content.strip())
+        analysis = AnalysisResult(**result)
+
+        # Save scan to S3
+        if req.user_id and scan_id:
+            key = f"users/{req.user_id}/scans/{scan_id}.json"
+            from datetime import datetime
+            scan_record = {
+                "scan_id": scan_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "user_id": req.user_id,
+                "source": "text",
+                **result,
+            }
+            try:
+                _s3().put_object(
+                    Bucket=BUCKET,
+                    Key=key,
+                    Body=json.dumps(scan_record),
+                    ContentType="application/json",
+                )
+                logger.info(f"Saved text scan {scan_id} for user {req.user_id}")
+            except Exception as e:
+                logger.error(f"Failed to save text scan to S3: {e}")
+
+        return AnalyzeResponse(success=True, analysis=analysis, scan_id=scan_id)
+    except Exception as exc:
+        logger.exception("Text analysis failed")
         return AnalyzeResponse(success=False, error=str(exc))
 
 
@@ -787,6 +1034,419 @@ async def upload_scan_image(req: UploadScanImageRequest):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Waitlist Endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Security & Authentication Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ChangePasswordRequest(BaseModel):
+    user_id: str
+    current_password: str
+    new_password: str
+
+
+@app.post("/change-password")
+async def change_password(req: ChangePasswordRequest):
+    """Change user password (placeholder - integrate with your auth provider)."""
+    profile = get_profile(req.user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # TODO: Integrate with actual auth provider (Cognito, Auth0, etc.)
+    # For now, store hashed password in profile
+    import hashlib
+    current_hash = profile.get("password_hash")
+
+    if current_hash:
+        provided_hash = hashlib.sha256(req.current_password.encode()).hexdigest()
+        if provided_hash != current_hash:
+            raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+    new_hash = hashlib.sha256(req.new_password.encode()).hexdigest()
+    profile["password_hash"] = new_hash
+    save_profile(req.user_id, profile, BUCKET)
+
+    return {"status": "ok"}
+
+
+class TwoFactorSendRequest(BaseModel):
+    user_id: str
+    phone_number: str
+
+
+@app.post("/2fa/send-code")
+async def send_2fa_code(req: TwoFactorSendRequest):
+    """Send a 2FA verification code via SMS (placeholder - integrate with Twilio/SNS)."""
+    import random
+
+    profile = get_profile(req.user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Generate 6-digit code
+    code = str(random.randint(100000, 999999))
+
+    # Store code with expiry (5 minutes)
+    profile["2fa_code"] = code
+    profile["2fa_code_expiry"] = (datetime.utcnow().timestamp() + 300)
+    profile["2fa_phone"] = req.phone_number
+    save_profile(req.user_id, profile, BUCKET)
+
+    # TODO: Send SMS via Twilio/SNS
+    # For development, log the code
+    logger.info(f"[2FA] Code for {req.user_id}: {code}")
+
+    return {"status": "ok", "message": "Code sent"}
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    user_id: str
+    code: str
+
+
+@app.post("/2fa/verify")
+async def verify_2fa_code(req: TwoFactorVerifyRequest):
+    """Verify a 2FA code and enable 2FA for the user."""
+    profile = get_profile(req.user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stored_code = profile.get("2fa_code")
+    expiry = profile.get("2fa_code_expiry", 0)
+
+    if not stored_code:
+        raise HTTPException(status_code=400, detail="No code requested")
+
+    if datetime.utcnow().timestamp() > expiry:
+        raise HTTPException(status_code=400, detail="Code expired")
+
+    if req.code != stored_code:
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    # Enable 2FA
+    profile["2fa_enabled"] = True
+    profile.pop("2fa_code", None)
+    profile.pop("2fa_code_expiry", None)
+    save_profile(req.user_id, profile, BUCKET)
+
+    return {"status": "ok"}
+
+
+class TwoFactorDisableRequest(BaseModel):
+    user_id: str
+
+
+@app.post("/2fa/disable")
+async def disable_2fa(req: TwoFactorDisableRequest):
+    """Disable 2FA for a user."""
+    profile = get_profile(req.user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    profile["2fa_enabled"] = False
+    profile.pop("2fa_phone", None)
+    save_profile(req.user_id, profile, BUCKET)
+
+    return {"status": "ok"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Session Management
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_user_sessions(user_id: str, bucket: str) -> list:
+    """Get all active sessions for a user."""
+    key = f"users/{user_id}/sessions.json"
+    try:
+        obj = _s3().get_object(Bucket=bucket, Key=key)
+        data = json.loads(obj["Body"].read())
+        return data.get("sessions", [])
+    except Exception:
+        return []
+
+
+def save_user_sessions(user_id: str, sessions: list, bucket: str):
+    """Save sessions for a user."""
+    key = f"users/{user_id}/sessions.json"
+    _s3().put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=json.dumps({"sessions": sessions}),
+        ContentType="application/json"
+    )
+
+
+@app.get("/users/{user_id}/sessions")
+def get_sessions(user_id: str):
+    """Get all active sessions for a user."""
+    sessions = get_user_sessions(user_id, BUCKET)
+
+    # If no sessions exist, create a default "current" session
+    if not sessions:
+        sessions = [{
+            "session_id": str(uuid.uuid4())[:8],
+            "device_name": "This device",
+            "last_active": datetime.utcnow().isoformat(),
+            "is_current": True,
+        }]
+        save_user_sessions(user_id, sessions, BUCKET)
+
+    return {"sessions": sessions}
+
+
+@app.post("/users/{user_id}/sessions/{session_id}/revoke")
+def revoke_session(user_id: str, session_id: str):
+    """Revoke a specific session."""
+    sessions = get_user_sessions(user_id, BUCKET)
+    sessions = [s for s in sessions if s.get("session_id") != session_id]
+    save_user_sessions(user_id, sessions, BUCKET)
+    return {"status": "ok"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Data Export (GDPR)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DataExportRequest(BaseModel):
+    user_id: str
+
+
+@app.post("/users/data-export")
+async def request_data_export(req: DataExportRequest):
+    """Request a data export for GDPR compliance."""
+    profile = get_profile(req.user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Record the export request
+    export_request = {
+        "user_id": req.user_id,
+        "requested_at": datetime.utcnow().isoformat(),
+        "status": "pending",
+        "email": profile.get("email"),
+    }
+
+    # Store in exports queue
+    key = f"exports/{req.user_id}/{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json"
+    _s3().put_object(
+        Bucket=BUCKET,
+        Key=key,
+        Body=json.dumps(export_request),
+        ContentType="application/json"
+    )
+
+    # TODO: Trigger async export job (Lambda, SQS, etc.)
+    logger.info(f"[GDPR] Data export requested for user {req.user_id}")
+
+    return {"status": "ok", "message": "Export requested"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Push Notifications
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PushTokenRequest(BaseModel):
+    user_id: str
+    push_token: str
+    platform: str  # 'ios' or 'android'
+    device_name: str | None = None
+
+
+@app.post("/users/push-token")
+async def register_push_token(req: PushTokenRequest):
+    """Register a device push token for a user."""
+    profile = get_profile(req.user_id, BUCKET)
+    if not profile:
+        profile = {"user_id": req.user_id}
+
+    # Store push tokens as a list (user may have multiple devices)
+    push_tokens = profile.get("push_tokens", [])
+
+    # Remove existing token for this device (avoid duplicates)
+    push_tokens = [t for t in push_tokens if t.get("token") != req.push_token]
+
+    # Add new token
+    push_tokens.append({
+        "token": req.push_token,
+        "platform": req.platform,
+        "device_name": req.device_name,
+        "registered_at": datetime.utcnow().isoformat(),
+    })
+
+    profile["push_tokens"] = push_tokens
+    save_profile(req.user_id, profile, BUCKET)
+
+    logger.info(f"[Push] Registered token for user {req.user_id} on {req.platform}")
+    return {"status": "ok"}
+
+
+class NotificationPrefsRequest(BaseModel):
+    user_id: str
+    prefs: dict
+
+
+@app.post("/users/notification-prefs")
+async def save_notification_prefs(req: NotificationPrefsRequest):
+    """Save notification preferences for a user."""
+    profile = get_profile(req.user_id, BUCKET)
+    if not profile:
+        profile = {"user_id": req.user_id}
+
+    profile["notification_prefs"] = req.prefs
+    save_profile(req.user_id, profile, BUCKET)
+
+    return {"status": "ok"}
+
+
+@app.get("/users/{user_id}/notification-prefs")
+def get_notification_prefs(user_id: str):
+    """Get notification preferences for a user."""
+    profile = get_profile(user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"prefs": profile.get("notification_prefs", {})}
+
+
+class SendNotificationRequest(BaseModel):
+    user_id: str
+    title: str
+    body: str
+    data: dict | None = None
+
+
+@app.post("/users/{user_id}/send-notification")
+async def send_push_notification(user_id: str, req: SendNotificationRequest):
+    """Send a push notification to a user's devices via Expo Push Service."""
+    import httpx
+
+    profile = get_profile(user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    push_tokens = profile.get("push_tokens", [])
+    if not push_tokens:
+        raise HTTPException(status_code=400, detail="No push tokens registered")
+
+    # Check if user has notifications enabled
+    notification_prefs = profile.get("notification_prefs", {})
+    if not notification_prefs.get("pushNotifications", True):
+        return {"status": "skipped", "reason": "User has disabled push notifications"}
+
+    # Build Expo push messages
+    messages = []
+    for token_info in push_tokens:
+        token = token_info.get("token")
+        if token and token.startswith("ExponentPushToken"):
+            messages.append({
+                "to": token,
+                "title": req.title,
+                "body": req.body,
+                "data": req.data or {},
+                "sound": "default",
+                "priority": "high",
+            })
+
+    if not messages:
+        return {"status": "skipped", "reason": "No valid Expo push tokens"}
+
+    # Send to Expo Push API
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=messages,
+                headers={"Content-Type": "application/json"},
+            )
+            result = response.json()
+            logger.info(f"[Push] Sent notification to {user_id}: {result}")
+            return {"status": "ok", "result": result}
+    except Exception as e:
+        logger.error(f"[Push] Failed to send notification: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BroadcastNotificationRequest(BaseModel):
+    title: str
+    body: str
+    data: dict | None = None
+    filter_pref: str | None = None  # e.g., "appUpdates" to only send to users with this enabled
+
+
+@app.post("/admin/broadcast-notification")
+async def broadcast_notification(req: BroadcastNotificationRequest):
+    """Broadcast a notification to all users (admin endpoint)."""
+    import httpx
+
+    # List all user profiles
+    try:
+        response = _s3().list_objects_v2(
+            Bucket=BUCKET,
+            Prefix="users/",
+            MaxKeys=1000
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    messages = []
+    user_count = 0
+
+    for obj in response.get("Contents", []):
+        key = obj["Key"]
+        if not key.endswith("/profile.json"):
+            continue
+
+        try:
+            profile_obj = _s3().get_object(Bucket=BUCKET, Key=key)
+            profile = json.loads(profile_obj["Body"].read())
+        except Exception:
+            continue
+
+        # Check notification preferences
+        notification_prefs = profile.get("notification_prefs", {})
+        if not notification_prefs.get("pushNotifications", True):
+            continue
+
+        if req.filter_pref and not notification_prefs.get(req.filter_pref, False):
+            continue
+
+        # Get push tokens
+        for token_info in profile.get("push_tokens", []):
+            token = token_info.get("token")
+            if token and token.startswith("ExponentPushToken"):
+                messages.append({
+                    "to": token,
+                    "title": req.title,
+                    "body": req.body,
+                    "data": req.data or {},
+                    "sound": "default",
+                })
+                user_count += 1
+
+    if not messages:
+        return {"status": "ok", "sent_to": 0}
+
+    # Send in batches of 100 (Expo limit)
+    try:
+        async with httpx.AsyncClient() as client:
+            for i in range(0, len(messages), 100):
+                batch = messages[i:i+100]
+                await client.post(
+                    "https://exp.host/--/api/v2/push/send",
+                    json=batch,
+                    headers={"Content-Type": "application/json"},
+                )
+
+        logger.info(f"[Push] Broadcast sent to {user_count} devices")
+        return {"status": "ok", "sent_to": user_count}
+    except Exception as e:
+        logger.error(f"[Push] Broadcast failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Waitlist
 # ─────────────────────────────────────────────────────────────────────────────
 
 class WaitlistRequest(BaseModel):

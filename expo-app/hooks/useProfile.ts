@@ -1,14 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL } from '../config';
+import { apiFetch } from '../lib/api';
 
-interface Profile {
+export interface Profile {
   name: string | null;
   email: string | null;
+  phone: string | null;
+  dob: string | null;
+  address: string | null;
+  occupation: string | null;
+  nationality: string | null;
+  photo_url: string | null;
   big_five: Record<string, number> | null;
 }
 
 interface UseProfileOptions {
-  baseUrl?: string;
   userId?: string;
 }
 
@@ -17,6 +22,7 @@ interface UseProfileReturn {
   isLoading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   initials: string;
 }
 
@@ -30,39 +36,50 @@ function getInitials(name: string | null): string {
 }
 
 export function useProfile({
-  baseUrl = API_BASE_URL,
   userId,
 }: UseProfileOptions = {}): UseProfileReturn {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProfile = useCallback(async () => {
-    if (!userId) return;
+  const refetch = useCallback(async () => {
+    if (!userId) {
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
 
-    try {
-      const res = await fetch(`${baseUrl}/profile/${userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setProfile(data);
-      } else if (res.status === 404) {
-        setProfile(null);
-      } else {
-        throw new Error('Failed to fetch profile');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-    } finally {
-      setIsLoading(false);
+    const { data, error: fetchError } = await apiFetch<Profile>(`/profile/${userId}`);
+
+    if (fetchError) {
+      setError(fetchError);
+    } else {
+      setProfile(data);
     }
-  }, [baseUrl, userId]);
+
+    setIsLoading(false);
+  }, [userId]);
+
+  const deleteAccount = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    if (!userId) {
+      return { success: false, error: 'No user ID' };
+    }
+
+    const { error: deleteError } = await apiFetch(`/users/${userId}`, { method: 'DELETE' });
+
+    if (deleteError) {
+      return { success: false, error: deleteError };
+    }
+
+    setProfile(null);
+    return { success: true };
+  }, [userId]);
 
   useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
+    refetch();
+  }, [refetch]);
 
   const initials = getInitials(profile?.name ?? null);
 
@@ -70,7 +87,8 @@ export function useProfile({
     profile,
     isLoading,
     error,
-    refetch: fetchProfile,
+    refetch,
+    deleteAccount,
     initials,
   };
 }

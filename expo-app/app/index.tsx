@@ -46,7 +46,7 @@ export default function SplashScreen() {
       ]),
     ]).start();
 
-    // Navigate after 2.5s to login/onboarding
+    // Navigate after 2.5s to onboarding flow
     const timer = setTimeout(() => {
       router.replace('/login');
     }, 2500);

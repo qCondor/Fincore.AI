@@ -18,8 +18,12 @@
       "bundleIdentifier": "one.fincore.app",
       "infoPlist": {
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true,
-          "NSAllowsLocalNetworking": true
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "localhost": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
         },
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -46,7 +50,9 @@
         {
           "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan products."
         }
-      ]
+      ],
+      "expo-mail-composer",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

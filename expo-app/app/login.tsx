@@ -8,12 +8,32 @@ import {
   Dimensions,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Platform,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Rect, Text as SvgText, Line } from 'react-native-svg';
+import * as WebBrowser from 'expo-web-browser';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as AuthSession from 'expo-auth-session';
+import { useUser } from '../contexts/UserContext';
+import { GOOGLE_CLIENT_ID, MICROSOFT_CLIENT_ID, MICROSOFT_TENANT_ID } from '../config';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const microsoftDiscovery = {
+  authorizationEndpoint: `https://login.microsoftonline.com/${MICROSOFT_TENANT_ID}/oauth2/v2.0/authorize`,
+  tokenEndpoint: `https://login.microsoftonline.com/${MICROSOFT_TENANT_ID}/oauth2/v2.0/token`,
+};
+
+const googleDiscovery = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+  tokenEndpoint: 'https://oauth2.googleapis.com/token',
+};
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -87,9 +107,164 @@ function SlideIcon({ type }: { type: string }) {
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { setUserName, setAuthProvider, setUserEmail } = useUser();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [isLoading, setIsLoading] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: 'fincore',
+  });
+
+  const [msRequest, msResponse, msPromptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId: MICROSOFT_CLIENT_ID,
+      scopes: ['openid', 'profile', 'email', 'User.Read'],
+      redirectUri,
+    },
+    microsoftDiscovery
+  );
+
+  const [googleRequest, googleResponse, googlePromptAsync] = AuthSession.useAuthRequest(
+    {
+      clientId: GOOGLE_CLIENT_ID,
+      scopes: ['openid', 'profile', 'email'],
+      redirectUri,
+    },
+    googleDiscovery
+  );
+
+  const handleAuthSuccess = (provider: 'google' | 'apple' | 'microsoft', name?: string, email?: string) => {
+    setAuthProvider(provider);
+    if (name) setUserName(name);
+    if (email) setUserEmail(email);
+    setIsLoading(null);
+    router.push('/info');
+  };
+
+  const handleGoogleAuth = async () => {
+    if (!termsAccepted || !googleRequest) return;
+    setIsLoading('google');
+
+    try {
+      const result = await googlePromptAsync();
+
+      if (result.type === 'success' && result.params?.code) {
+        // Exchange code for token
+        const tokenResponse = await fetch(googleDiscovery.tokenEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: GOOGLE_CLIENT_ID,
+            code: result.params.code,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code',
+            code_verifier: googleRequest.codeVerifier || '',
+          }).toString(),
+        });
+
+        const tokens = await tokenResponse.json();
+
+        if (tokens.access_token) {
+          // Fetch user profile from Google
+          const profileResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${tokens.access_token}` },
+          });
+          const profile = await profileResponse.json();
+
+          handleAuthSuccess(
+            'google',
+            profile.name,
+            profile.email
+          );
+          return;
+        }
+      }
+
+      setIsLoading(null);
+      if (result.type !== 'cancel') {
+        Alert.alert('Authentication Failed', 'Could not sign in with Google. Please try again.');
+      }
+    } catch (e) {
+      setIsLoading(null);
+      Alert.alert('Authentication Failed', 'Could not sign in with Google. Please try again.');
+    }
+  };
+
+  const handleMicrosoftAuth = async () => {
+    if (!termsAccepted || !msRequest) return;
+    setIsLoading('microsoft');
+
+    try {
+      const result = await msPromptAsync();
+
+      if (result.type === 'success' && result.params?.code) {
+        // Exchange code for token
+        const tokenResponse = await fetch(microsoftDiscovery.tokenEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: MICROSOFT_CLIENT_ID,
+            code: result.params.code,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code',
+            code_verifier: msRequest.codeVerifier || '',
+          }).toString(),
+        });
+
+        const tokens = await tokenResponse.json();
+
+        if (tokens.access_token) {
+          // Fetch user profile from Microsoft Graph
+          const profileResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+            headers: { Authorization: `Bearer ${tokens.access_token}` },
+          });
+          const profile = await profileResponse.json();
+
+          handleAuthSuccess(
+            'microsoft',
+            profile.displayName || profile.givenName,
+            profile.mail || profile.userPrincipalName
+          );
+          return;
+        }
+      }
+
+      setIsLoading(null);
+      if (result.type !== 'cancel') {
+        Alert.alert('Authentication Failed', 'Could not sign in with Microsoft. Please try again.');
+      }
+    } catch (e) {
+      setIsLoading(null);
+      Alert.alert('Authentication Failed', 'Could not sign in with Microsoft. Please try again.');
+    }
+  };
+
+  const handleAppleAuth = async () => {
+    if (!termsAccepted) return;
+    setIsLoading('apple');
+
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      const fullName = credential.fullName
+        ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
+        : undefined;
+
+      handleAuthSuccess('apple', fullName || undefined, credential.email || undefined);
+    } catch (e: any) {
+      setIsLoading(null);
+      if (e.code !== 'ERR_REQUEST_CANCELED') {
+        Alert.alert('Authentication Failed', 'Could not sign in with Apple. Please try again.');
+      }
+    }
+  };
 
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
@@ -111,12 +286,6 @@ export default function LoginScreen() {
 
   const handleSignIn = () => {
     goToSlide(3);
-  };
-
-  const handleSocialAuth = () => {
-    if (termsAccepted) {
-      router.push('/info');
-    }
   };
 
   return (
@@ -165,58 +334,72 @@ export default function LoginScreen() {
                 <View style={styles.authCard}>
                   <BlurView intensity={20} tint="dark" style={styles.authCardBlur}>
                     <TouchableOpacity
-                      style={[styles.authButton, !termsAccepted && styles.authButtonDisabled]}
-                      onPress={handleSocialAuth}
-                      disabled={!termsAccepted}
+                      style={[styles.authButton, (!termsAccepted || isLoading) && styles.authButtonDisabled]}
+                      onPress={handleGoogleAuth}
+                      disabled={!termsAccepted || !!isLoading}
                     >
                       <View style={styles.authIconContainer}>
-                        <Svg width={20} height={20} viewBox="0 0 20 20">
-                          <Path d="M19.6 10.2c0-.7-.1-1.4-.2-2H10v3.8h5.4c-.2 1.2-.9 2.2-2 2.9v2.4h3.2c1.9-1.7 2.9-4.3 2.9-7.1z" fill="#4285F4" />
-                          <Path d="M10 20c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H1.1v2.6C2.7 17.8 6.1 20 10 20z" fill="#34A853" />
-                          <Path d="M4.4 12c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V5.4H1.1C.4 6.8 0 8.4 0 10s.4 3.2 1.1 4.6L4.4 12z" fill="#FBBC05" />
-                          <Path d="M10 4c1.5 0 2.8.5 3.9 1.5l2.9-2.9C15 .9 12.7 0 10 0 6.1 0 2.7 2.2 1.1 5.4L4.4 8c.8-2.3 3-4.1 5.6-4.1z" fill="#EA4335" />
-                        </Svg>
+                        {isLoading === 'google' ? (
+                          <ActivityIndicator size="small" color="#4285F4" />
+                        ) : (
+                          <Svg width={20} height={20} viewBox="0 0 20 20">
+                            <Path d="M19.6 10.2c0-.7-.1-1.4-.2-2H10v3.8h5.4c-.2 1.2-.9 2.2-2 2.9v2.4h3.2c1.9-1.7 2.9-4.3 2.9-7.1z" fill="#4285F4" />
+                            <Path d="M10 20c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H1.1v2.6C2.7 17.8 6.1 20 10 20z" fill="#34A853" />
+                            <Path d="M4.4 12c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V5.4H1.1C.4 6.8 0 8.4 0 10s.4 3.2 1.1 4.6L4.4 12z" fill="#FBBC05" />
+                            <Path d="M10 4c1.5 0 2.8.5 3.9 1.5l2.9-2.9C15 .9 12.7 0 10 0 6.1 0 2.7 2.2 1.1 5.4L4.4 8c.8-2.3 3-4.1 5.6-4.1z" fill="#EA4335" />
+                          </Svg>
+                        )}
                       </View>
-                      <Text style={[styles.authButtonText, !termsAccepted && styles.authButtonTextDisabled]}>
+                      <Text style={[styles.authButtonText, (!termsAccepted || isLoading) && styles.authButtonTextDisabled]}>
                         Continue with Google
                       </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.authButton, !termsAccepted && styles.authButtonDisabled]}
-                      onPress={handleSocialAuth}
-                      disabled={!termsAccepted}
+                      style={[styles.authButton, (!termsAccepted || isLoading) && styles.authButtonDisabled]}
+                      onPress={handleMicrosoftAuth}
+                      disabled={!termsAccepted || !!isLoading}
                     >
                       <View style={styles.authIconContainer}>
-                        <Svg width={20} height={20} viewBox="0 0 20 20">
-                          <Rect width={9} height={9} fill="#F25022" />
-                          <Rect x={10.5} width={9} height={9} fill="#7FBA00" />
-                          <Rect y={10.5} width={9} height={9} fill="#00A4EF" />
-                          <Rect x={10.5} y={10.5} width={9} height={9} fill="#FFB900" />
-                        </Svg>
+                        {isLoading === 'microsoft' ? (
+                          <ActivityIndicator size="small" color="#00A4EF" />
+                        ) : (
+                          <Svg width={20} height={20} viewBox="0 0 20 20">
+                            <Rect width={9} height={9} fill="#F25022" />
+                            <Rect x={10.5} width={9} height={9} fill="#7FBA00" />
+                            <Rect y={10.5} width={9} height={9} fill="#00A4EF" />
+                            <Rect x={10.5} y={10.5} width={9} height={9} fill="#FFB900" />
+                          </Svg>
+                        )}
                       </View>
-                      <Text style={[styles.authButtonText, !termsAccepted && styles.authButtonTextDisabled]}>
+                      <Text style={[styles.authButtonText, (!termsAccepted || isLoading) && styles.authButtonTextDisabled]}>
                         Continue with Microsoft
                       </Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[styles.authButton, !termsAccepted && styles.authButtonDisabled]}
-                      onPress={handleSocialAuth}
-                      disabled={!termsAccepted}
-                    >
-                      <View style={styles.authIconContainer}>
-                        <Svg width={20} height={20} viewBox="0 0 20 20">
-                          <Path
-                            d="M17.05 13.78c-.32.7-.47 1.01-.88 1.63-.57.87-1.37 1.95-2.37 1.96-.88.01-1.11-.58-2.31-.57-1.19.01-1.44.58-2.33.57-1-.01-1.76-1-2.33-1.86-1.6-2.43-1.77-5.28-.78-6.8.7-1.08 1.81-1.71 2.84-1.71 1.06 0 1.72.58 2.6.58.85 0 1.37-.58 2.6-.58.92 0 1.9.5 2.6 1.36-2.29 1.26-1.92 4.53.36 5.42zM12.98 5.15c.44-.57.78-1.37.66-2.19-.72.05-1.57.51-2.06 1.11-.44.54-.81 1.35-.67 2.14.79.02 1.61-.44 2.07-1.06z"
-                            fill="#000"
-                          />
-                        </Svg>
-                      </View>
-                      <Text style={[styles.authButtonText, !termsAccepted && styles.authButtonTextDisabled]}>
-                        Continue with Apple
-                      </Text>
-                    </TouchableOpacity>
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity
+                        style={[styles.authButton, (!termsAccepted || isLoading) && styles.authButtonDisabled]}
+                        onPress={handleAppleAuth}
+                        disabled={!termsAccepted || !!isLoading}
+                      >
+                        <View style={styles.authIconContainer}>
+                          {isLoading === 'apple' ? (
+                            <ActivityIndicator size="small" color="#000" />
+                          ) : (
+                            <Svg width={20} height={20} viewBox="0 0 20 20">
+                              <Path
+                                d="M17.05 13.78c-.32.7-.47 1.01-.88 1.63-.57.87-1.37 1.95-2.37 1.96-.88.01-1.11-.58-2.31-.57-1.19.01-1.44.58-2.33.57-1-.01-1.76-1-2.33-1.86-1.6-2.43-1.77-5.28-.78-6.8.7-1.08 1.81-1.71 2.84-1.71 1.06 0 1.72.58 2.6.58.85 0 1.37-.58 2.6-.58.92 0 1.9.5 2.6 1.36-2.29 1.26-1.92 4.53.36 5.42zM12.98 5.15c.44-.57.78-1.37.66-2.19-.72.05-1.57.51-2.06 1.11-.44.54-.81 1.35-.67 2.14.79.02 1.61-.44 2.07-1.06z"
+                                fill="#000"
+                              />
+                            </Svg>
+                          )}
+                        </View>
+                        <Text style={[styles.authButtonText, (!termsAccepted || isLoading) && styles.authButtonTextDisabled]}>
+                          Continue with Apple
+                        </Text>
+                      </TouchableOpacity>
+                    )}
 
                     <TouchableOpacity
                       style={styles.termsRow}
@@ -241,7 +424,6 @@ export default function LoginScreen() {
           </View>
         ))}
       </ScrollView>
-
     </View>
   );
 }
@@ -398,22 +580,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(255,255,255,0.65)',
     fontWeight: '500',
-  },
-  dotsContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  dotActive: {
-    backgroundColor: '#fff',
   },
 });

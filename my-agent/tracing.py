@@ -73,6 +73,33 @@ def get_camera_client() -> Langfuse | None:
         return None
 
 
+def get_chat_prompt(name: str, label: str = "production") -> tuple[str | None, dict | None]:
+    """Fetch a prompt from Langfuse for the Chat project.
+
+    Args:
+        name: The prompt name (e.g., "faith-chat")
+        label: The prompt label/tag (default: "production")
+
+    Returns:
+        Tuple of (prompt_template, config) or (None, None) if not found.
+        prompt_template is the raw string with {{variables}}.
+        config is the model configuration dict.
+    """
+    client = get_chat_client()
+    if not client:
+        return None, None
+
+    try:
+        prompt = client.get_prompt(name, label=label)
+        template = prompt.prompt
+        config = prompt.config or {}
+        logger.info(f"Fetched Langfuse prompt '{name}' (label={label})")
+        return template, config
+    except Exception as e:
+        logger.warning(f"Failed to fetch Langfuse prompt '{name}': {e}")
+        return None, None
+
+
 def flush_all():
     """Flush any pending traces to Langfuse (call on shutdown)."""
     if _chat_client:
