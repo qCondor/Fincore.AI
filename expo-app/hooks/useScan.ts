@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { CameraView } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { apiPost } from '../lib/api';
 import { API_BASE_URL } from '../config';
 
 export interface AnalysisBreakdown {
@@ -37,7 +38,6 @@ export interface PsychologyCost {
 }
 
 export interface UseScanOptions {
-  baseUrl?: string;
   userId?: string;
 }
 
@@ -50,10 +50,18 @@ export interface UseScanReturn {
   psychologyCost: PsychologyCost | null;
   captureAndAnalyse: () => Promise<AnalysisResult | null>;
   analyseFromUri: (uri: string) => Promise<AnalysisResult | null>;
+  analyseFromText: (productDescription: string) => Promise<AnalysisResult | null>;
   clearResult: () => void;
   fetchPsychologyCost: (basePrice: number) => Promise<PsychologyCost | null>;
   resetScanState: () => void;
   loadFromHistory: (result: AnalysisResult) => void;
+}
+
+interface AnalyzeResponse {
+  success: boolean;
+  analysis?: AnalysisResult;
+  scan_id?: string;
+  error?: string;
 }
 
 async function compressImage(uri: string): Promise<{ base64: string; uri: string }> {
@@ -65,10 +73,7 @@ async function compressImage(uri: string): Promise<{ base64: string; uri: string
   return { base64: result.base64 || '', uri: result.uri };
 }
 
-export function useScan({
-  baseUrl = API_BASE_URL,
-  userId,
-}: UseScanOptions = {}): UseScanReturn {
+export function useScan({ userId }: UseScanOptions = {}): UseScanReturn {
   const cameraRef = useRef<CameraView | null>(null);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -76,61 +81,43 @@ export function useScan({
   const [error, setError] = useState<string | null>(null);
   const [psychologyCost, setPsychologyCost] = useState<PsychologyCost | null>(null);
 
+  const resetState = useCallback(() => {
+    setAnalysisResult(null);
+    setPreviewUri(null);
+    setError(null);
+    setPsychologyCost(null);
+  }, []);
+
   const analyseImage = useCallback(
     async (base64: string, localUri: string): Promise<AnalysisResult | null> => {
       setIsAnalysing(true);
       setError(null);
       setPreviewUri(localUri);
 
-      console.log('[useScan] analyseImage called, baseUrl:', baseUrl);
       try {
-        const res = await fetch(`${baseUrl}/analyze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image_base64: base64,
-            media_type: 'image/jpeg',
-            user_id: userId,
-          }),
+        const { data, error: fetchError } = await apiPost<AnalyzeResponse>('/analyze', {
+          image_base64: base64,
+          media_type: 'image/jpeg',
+          user_id: userId,
         });
 
-        console.log('[useScan] Response status:', res.status);
-        if (!res.ok) {
-          const text = await res.text();
-          console.log('[useScan] Error response:', text);
-          throw new Error(`HTTP ${res.status}`);
+        if (fetchError || !data?.success) {
+          throw new Error(fetchError || data?.error || 'Analysis failed');
         }
 
-        const data = await res.json();
-        console.log('[useScan] Response data success:', data.success, 'error:', data.error);
-        if (!data.success) {
-          throw new Error(data.error ?? 'Analysis failed');
-        }
-
-        const result = { ...data.analysis, scan_id: data.scan_id };
+        const result = { ...data.analysis!, scan_id: data.scan_id };
         setAnalysisResult(result);
 
-        // Upload image to S3 for history
         if (data.scan_id && userId) {
-          try {
-            await fetch(`${baseUrl}/upload-scan-image`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                image_base64: base64,
-                user_id: userId,
-                scan_id: data.scan_id,
-              }),
-            });
-            console.log('[useScan] Image uploaded for history');
-          } catch (uploadErr) {
-            console.log('[useScan] Image upload failed (non-critical):', uploadErr);
-          }
+          apiPost('/upload-scan-image', {
+            image_base64: base64,
+            user_id: userId,
+            scan_id: data.scan_id,
+          }).catch(() => {});
         }
 
         return result;
       } catch (e) {
-        console.log('[useScan] analyseImage error:', e);
         const message = e instanceof Error ? e.message : 'Analysis failed';
         setError(message);
         return null;
@@ -138,31 +125,22 @@ export function useScan({
         setIsAnalysing(false);
       }
     },
-    [baseUrl, userId]
+    [userId]
   );
 
   const captureAndAnalyse = useCallback(async (): Promise<AnalysisResult | null> => {
-    console.log('[useScan] captureAndAnalyse called, cameraRef.current:', !!cameraRef.current);
-    if (!cameraRef.current) {
-      console.log('[useScan] No camera ref!');
-      return null;
-    }
+    if (!cameraRef.current) return null;
 
     try {
-      console.log('[useScan] Taking picture...');
       const photo = await cameraRef.current.takePictureAsync({ base64: false });
-      console.log('[useScan] Photo result:', photo ? 'success' : 'null', photo?.uri);
       if (!photo?.uri) {
         setError('Failed to capture photo');
         return null;
       }
 
-      console.log('[useScan] Compressing image...');
       const compressed = await compressImage(photo.uri);
-      console.log('[useScan] Sending to backend...');
       return analyseImage(compressed.base64, compressed.uri);
     } catch (e) {
-      console.log('[useScan] Capture error:', e);
       const message = e instanceof Error ? e.message : 'Capture failed';
       setError(message);
       return null;
@@ -183,19 +161,37 @@ export function useScan({
     [analyseImage]
   );
 
-  const clearResult = useCallback(() => {
-    setAnalysisResult(null);
-    setPreviewUri(null);
-    setError(null);
-    setPsychologyCost(null);
-  }, []);
+  const analyseFromText = useCallback(
+    async (productDescription: string): Promise<AnalysisResult | null> => {
+      if (!productDescription.trim()) return null;
 
-  const resetScanState = useCallback(() => {
-    setPreviewUri(null);
-    setAnalysisResult(null);
-    setError(null);
-    setPsychologyCost(null);
-  }, []);
+      setIsAnalysing(true);
+      setError(null);
+      setPreviewUri(null);
+
+      try {
+        const { data, error: fetchError } = await apiPost<AnalyzeResponse>('/analyze-text', {
+          product_description: productDescription,
+          user_id: userId,
+        });
+
+        if (fetchError || !data?.success) {
+          throw new Error(fetchError || data?.error || 'Analysis failed');
+        }
+
+        const result = { ...data.analysis!, scan_id: data.scan_id };
+        setAnalysisResult(result);
+        return result;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Analysis failed';
+        setError(message);
+        return null;
+      } finally {
+        setIsAnalysing(false);
+      }
+    },
+    [userId]
+  );
 
   const loadFromHistory = useCallback((result: AnalysisResult) => {
     setAnalysisResult(result);
@@ -205,23 +201,17 @@ export function useScan({
 
   const fetchPsychologyCost = useCallback(
     async (basePrice: number): Promise<PsychologyCost | null> => {
-      try {
-        const res = await fetch(`${baseUrl}/psychology-cost`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: userId, base_price: basePrice }),
-        });
+      const { data } = await apiPost<PsychologyCost>('/psychology-cost', {
+        user_id: userId,
+        base_price: basePrice,
+      });
 
-        if (!res.ok) return null;
-
-        const data = await res.json();
+      if (data) {
         setPsychologyCost(data);
-        return data;
-      } catch {
-        return null;
       }
+      return data;
     },
-    [baseUrl, userId]
+    [userId]
   );
 
   return {
@@ -233,9 +223,10 @@ export function useScan({
     psychologyCost,
     captureAndAnalyse,
     analyseFromUri,
-    clearResult,
+    analyseFromText,
+    clearResult: resetState,
     fetchPsychologyCost,
-    resetScanState,
+    resetScanState: resetState,
     loadFromHistory,
   };
 }

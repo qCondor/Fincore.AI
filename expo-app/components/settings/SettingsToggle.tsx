@@ -7,19 +7,21 @@ interface SettingsToggleProps {
   value: boolean;
   onValueChange: (value: boolean) => void;
   isLast?: boolean;
+  disabled?: boolean;
 }
 
-export function SettingsToggle({ icon, label, value, onValueChange, isLast = false }: SettingsToggleProps) {
+export function SettingsToggle({ icon, label, value, onValueChange, isLast = false, disabled = false }: SettingsToggleProps) {
   return (
-    <View style={[styles.container, !isLast && styles.border]}>
-      <View style={styles.iconContainer}>{icon}</View>
-      <Text style={styles.label}>{label}</Text>
+    <View style={[styles.container, !isLast && styles.border, disabled && styles.disabled]}>
+      <View style={[styles.iconContainer, disabled && styles.iconDisabled]}>{icon}</View>
+      <Text style={[styles.label, disabled && styles.labelDisabled]}>{label}</Text>
       <Switch
         value={value}
         onValueChange={onValueChange}
         trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#34C759' }}
         thumbColor="#fff"
         ios_backgroundColor="rgba(255,255,255,0.2)"
+        disabled={disabled}
       />
     </View>
   );
@@ -49,5 +51,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: '#fff',
+  },
+  disabled: {
+    opacity: 0.5,
+  },
+  iconDisabled: {
+    opacity: 0.5,
+  },
+  labelDisabled: {
+    opacity: 0.7,
   },
 });

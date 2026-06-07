@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 interface SettingsRowProps {
@@ -10,6 +10,7 @@ interface SettingsRowProps {
   showChevron?: boolean;
   danger?: boolean;
   isLast?: boolean;
+  loading?: boolean;
 }
 
 function ChevronIcon() {
@@ -20,17 +21,24 @@ function ChevronIcon() {
   );
 }
 
-export function SettingsRow({ icon, label, value, onPress, showChevron = true, danger = false, isLast = false }: SettingsRowProps) {
+export function SettingsRow({ icon, label, value, onPress, showChevron = true, danger = false, isLast = false, loading = false }: SettingsRowProps) {
   return (
     <TouchableOpacity
       style={[styles.container, !isLast && styles.border]}
       onPress={onPress}
       activeOpacity={onPress ? 0.7 : 1}
+      disabled={loading}
     >
       <View style={styles.iconContainer}>{icon}</View>
       <Text style={[styles.label, danger && styles.dangerLabel]}>{label}</Text>
-      {value && <Text style={styles.value}>{value}</Text>}
-      {showChevron && <ChevronIcon />}
+      {loading ? (
+        <ActivityIndicator size="small" color="rgba(255,255,255,0.5)" style={{ marginRight: 8 }} />
+      ) : (
+        <>
+          {value && <Text style={styles.value}>{value}</Text>}
+          {showChevron && <ChevronIcon />}
+        </>
+      )}
     </TouchableOpacity>
   );
 }

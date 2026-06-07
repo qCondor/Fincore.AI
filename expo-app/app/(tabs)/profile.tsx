@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,17 +7,17 @@ import {
   ScrollView,
   Dimensions,
   Animated,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
   Keyboard,
   Modal,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop, ClipPath, Rect, G, Circle } from 'react-native-svg';
-import { useRouter } from 'expo-router';
+import Svg, { Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop, Circle } from 'react-native-svg';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ComingSoonModal } from '../../components/ComingSoonModal';
 import { useProfile } from '../../hooks/useProfile';
 import { useUser } from '../../contexts/UserContext';
@@ -25,149 +25,20 @@ import {
   PersonalDetails,
   SecurityPrivacy,
   Notifications,
-  PaymentMethods,
   Preferences,
   HelpSupport,
 } from '../../components/settings';
-
-function WaveBackground() {
-  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-  const wave1Anim = React.useRef(new Animated.Value(0)).current;
-  const wave2Anim = React.useRef(new Animated.Value(0)).current;
-  const wave3Anim = React.useRef(new Animated.Value(0)).current;
-  const wave4Anim = React.useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    const createWaveAnimation = (anim: Animated.Value, duration: number, delay: number) => {
-      setTimeout(() => {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(anim, { toValue: 1, duration: duration / 2, useNativeDriver: true }),
-            Animated.timing(anim, { toValue: 0, duration: duration / 2, useNativeDriver: true }),
-          ])
-        ).start();
-      }, delay);
-    };
-
-    createWaveAnimation(wave1Anim, 6000, 0);
-    createWaveAnimation(wave2Anim, 7000, 500);
-    createWaveAnimation(wave3Anim, 8000, 1000);
-    createWaveAnimation(wave4Anim, 5000, 1500);
-  }, []);
-
-  const wave1Style = {
-    transform: [
-      { translateY: wave1Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -10] }) },
-    ],
-  };
-
-  const wave2Style = {
-    transform: [
-      { translateY: wave2Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }) },
-    ],
-  };
-
-  const wave3Style = {
-    transform: [
-      { translateY: wave3Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 12] }) },
-    ],
-  };
-
-  const wave4Style = {
-    transform: [
-      { translateY: wave4Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -6] }) },
-    ],
-  };
-
-  return (
-    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
-      <Svg
-        width="100%"
-        height="100%"
-        viewBox="0 0 393 852"
-        preserveAspectRatio="none"
-        style={StyleSheet.absoluteFill}
-      >
-        <Defs>
-          <SvgLinearGradient id="base-gradient-profile" x1="0" y1="0.5" x2="1" y2="0.5">
-            <Stop offset="0%" stopColor="#3CB8F0" />
-            <Stop offset="50%" stopColor="#0A6FE8" />
-            <Stop offset="100%" stopColor="#0035A0" />
-          </SvgLinearGradient>
-        </Defs>
-        <Path d="M0,0 L393,0 L393,852 L0,852 Z" fill="url(#base-gradient-profile)" />
-      </Svg>
-      <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, wave1Style]}>
-        <Svg width="100%" height="100%" viewBox="0 0 393 852" preserveAspectRatio="none">
-          <Defs>
-            <ClipPath id="clip-profile-1">
-              <Rect x="0" y="0" width="393" height="852" />
-            </ClipPath>
-            <SvgLinearGradient id="wave1-anim-profile" x1="0.8" y1="0" x2="0.2" y2="1">
-              <Stop offset="0%" stopColor="#A8EAFF" stopOpacity={0.55} />
-              <Stop offset="45%" stopColor="#70D8FF" stopOpacity={0.35} />
-              <Stop offset="100%" stopColor="#5ED4FF" stopOpacity={0.05} />
-            </SvgLinearGradient>
-          </Defs>
-          <G clipPath="url(#clip-profile-1)">
-            <Path d="M393,-50 C410,250 100,350 0,550 C-30,650 50,800 0,902 L393,902 Z" fill="url(#wave1-anim-profile)" />
-          </G>
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, wave2Style]}>
-        <Svg width="100%" height="100%" viewBox="0 0 393 852" preserveAspectRatio="none">
-          <Defs>
-            <ClipPath id="clip-profile-2">
-              <Rect x="0" y="0" width="393" height="852" />
-            </ClipPath>
-            <SvgLinearGradient id="wave2-anim-profile" x1="0.7" y1="0" x2="0.3" y2="1">
-              <Stop offset="0%" stopColor="#6DDDFF" stopOpacity={0.4} />
-              <Stop offset="50%" stopColor="#44BBFF" stopOpacity={0.25} />
-              <Stop offset="100%" stopColor="#1A90FF" stopOpacity={0.05} />
-            </SvgLinearGradient>
-          </Defs>
-          <G clipPath="url(#clip-profile-2)">
-            <Path d="M393,-150 C400,150 50,250 0,420 C-30,530 30,700 0,902 L393,902 Z" fill="url(#wave2-anim-profile)" />
-          </G>
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, wave3Style]}>
-        <Svg width="100%" height="100%" viewBox="0 0 393 852" preserveAspectRatio="none">
-          <Defs>
-            <ClipPath id="clip-profile-3">
-              <Rect x="0" y="0" width="393" height="852" />
-            </ClipPath>
-            <SvgLinearGradient id="wave3-anim-profile" x1="0.6" y1="0" x2="0.4" y2="1">
-              <Stop offset="0%" stopColor="#50C8FF" stopOpacity={0.35} />
-              <Stop offset="50%" stopColor="#2AA0F0" stopOpacity={0.2} />
-              <Stop offset="100%" stopColor="#0A6FE8" stopOpacity={0.05} />
-            </SvgLinearGradient>
-          </Defs>
-          <G clipPath="url(#clip-profile-3)">
-            <Path d="M393,-250 C390,80 20,170 0,300 C-30,400 10,580 0,902 L393,902 Z" fill="url(#wave3-anim-profile)" />
-          </G>
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, wave4Style]}>
-        <Svg width="100%" height="100%" viewBox="0 0 393 852" preserveAspectRatio="none">
-          <Defs>
-            <ClipPath id="clip-profile-4">
-              <Rect x="0" y="0" width="393" height="852" />
-            </ClipPath>
-            <SvgLinearGradient id="wave4-anim-profile" x1="0.5" y1="0" x2="0.5" y2="1">
-              <Stop offset="0%" stopColor="#1A5FAA" stopOpacity={0.4} />
-              <Stop offset="50%" stopColor="#0D4080" stopOpacity={0.25} />
-              <Stop offset="100%" stopColor="#003070" stopOpacity={0.05} />
-            </SvgLinearGradient>
-          </Defs>
-          <G clipPath="url(#clip-profile-4)">
-            <Path d="M393,400 C350,550 200,750 100,820 C50,860 0,840 0,902 L393,902 Z" fill="url(#wave4-anim-profile)" />
-          </G>
-        </Svg>
-      </Animated.View>
-    </View>
-  );
-}
+import {
+  XIcon,
+  UserIcon,
+  ShieldIcon,
+  BellIcon,
+  SettingsIcon,
+  HelpCircleIcon,
+  LogOutIcon,
+} from '../../components/icons';
+import { WaveBackground } from '../../components/WaveBackground';
+import { BottomInputBar } from '../../components/BottomInputBar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -309,106 +180,12 @@ function CheckIcon({ color }: { color: string }) {
   );
 }
 
-function HomeIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-        stroke="#fff"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path d="M9 22V12h6v10" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-function MicIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
-      <Path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-      <Path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" stroke="rgba(255,255,255,0.5)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
-        stroke="#fff"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function BrainIcon({ active }: { active?: boolean }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : 'rgba(255,255,255,0.7)'} strokeWidth={2}>
-      <Path d="M12 2a4 4 0 014 4v2a4 4 0 01-8 0V6a4 4 0 014-4z" />
-      <Path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
-    </Svg>
-  );
-}
-
-function MessageNavIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2}>
-      <Path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-    </Svg>
-  );
-}
-
-function CameraNavIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2}>
-      <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11z" />
-      <Path d="M12 17a4 4 0 100-8 4 4 0 000 8z" />
-    </Svg>
-  );
-}
-
-function LandmarkIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2}>
-      <Line x1={3} y1={22} x2={21} y2={22} />
-      <Line x1={6} y1={18} x2={6} y2={11} />
-      <Line x1={10} y1={18} x2={10} y2={11} />
-      <Line x1={14} y1={18} x2={14} y2={11} />
-      <Line x1={18} y1={18} x2={18} y2={11} />
-      <Path d="M12 2L2 7h20L12 2z" />
-    </Svg>
-  );
-}
-
-function BarChartIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2}>
-      <Line x1={18} y1={20} x2={18} y2={10} />
-      <Line x1={12} y1={20} x2={12} y2={4} />
-      <Line x1={6} y1={20} x2={6} y2={14} />
-    </Svg>
-  );
-}
-
-function ChevronRightIcon() {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={2}>
-      <Path d="M9 18l6-6-6-6" />
-    </Svg>
-  );
-}
-
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ openSettings?: string }>();
   const { userId } = useUser();
-  const { initials, profile, refetch } = useProfile({ userId: userId ?? undefined });
+  const { initials, profile, refetch, deleteAccount } = useProfile({ userId: userId ?? undefined });
 
   const oceanTraits = React.useMemo(
     () => buildOceanTraits(profile?.big_five ?? null),
@@ -416,14 +193,12 @@ export default function ProfileScreen() {
   );
   const [profilePage, setProfilePage] = useState(0);
   const [expandedTraits, setExpandedTraits] = useState<Set<string>>(new Set());
-  const [inputFocused, setInputFocused] = useState(false);
   const [inputText, setInputText] = useState('');
-  const [navExpanded, setNavExpanded] = useState(false);
   const [comingSoonModal, setComingSoonModal] = useState<{ open: boolean; feature: 'banking' | 'analytics' | 'blueprint' | null }>({ open: false, feature: null });
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
-  const [settingsPage, setSettingsPage] = useState<'personal' | 'security' | 'notifications' | 'payments' | 'preferences' | 'help' | null>(null);
-  const navSlide = useRef(new Animated.Value(-SCREEN_WIDTH)).current;
-  const settingsSlide = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+  const [settingsPage, setSettingsPage] = useState<'personal' | 'security' | 'notifications' | 'preferences' | 'help' | null>(null);
+  const settingsSlide = React.useRef(new Animated.Value(SCREEN_WIDTH)).current;
+  const hasOpenedSettings = React.useRef(false);
 
   const openSettingsMenu = () => {
     setSettingsMenuOpen(true);
@@ -433,6 +208,17 @@ export default function ProfileScreen() {
       useNativeDriver: true,
     }).start();
   };
+
+  // Auto-open settings menu if navigated with openSettings param
+  useEffect(() => {
+    if (params.openSettings === 'true' && !hasOpenedSettings.current) {
+      hasOpenedSettings.current = true;
+      // Small delay to ensure animation works after navigation
+      setTimeout(() => {
+        openSettingsMenu();
+      }, 100);
+    }
+  }, [params.openSettings]);
 
   const closeSettingsMenu = () => {
     Animated.timing(settingsSlide, {
@@ -452,18 +238,9 @@ export default function ProfileScreen() {
 
   const { clearUser } = useUser();
 
-  const toggleNav = (show: boolean) => {
-    setNavExpanded(show);
-    Animated.timing(navSlide, {
-      toValue: show ? 0 : -SCREEN_WIDTH,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const askFaithAboutProfile = (question: string) => {
-    if (!question.trim()) return;
-    router.push({ pathname: '/faith', params: { profileQuestion: question.trim() } });
+  const askFaithAboutProfile = () => {
+    if (!inputText.trim()) return;
+    router.push({ pathname: '/faith', params: { profileQuestion: inputText.trim() } });
     setInputText('');
   };
 
@@ -486,7 +263,7 @@ export default function ProfileScreen() {
       keyboardVerticalOffset={0}
     >
       {/* Wave background */}
-      <WaveBackground />
+      <WaveBackground prefix="profile" />
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -498,10 +275,14 @@ export default function ProfileScreen() {
             </Text>
           </View>
           <TouchableOpacity style={styles.avatarButton} onPress={openSettingsMenu}>
-            <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
-              <View style={styles.avatarShine} />
-              <Text style={styles.avatarText}>{initials}</Text>
-            </LinearGradient>
+            {profile?.photo_url ? (
+              <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
+            ) : (
+              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
+                <View style={styles.avatarShine} />
+                <Text style={styles.avatarText}>{initials}</Text>
+              </LinearGradient>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -705,87 +486,20 @@ export default function ProfileScreen() {
         </ScrollView>
       </View>
 
-      {/* Bottom input bar with sliding navbar */}
-      <View style={[styles.inputBarContainer, { paddingBottom: insets.bottom + 8 }]}>
-        <View style={styles.inputBarWrapper}>
-          {/* Sliding navbar */}
-          <Animated.View
-            style={[
-              styles.navBar,
-              { transform: [{ translateX: navSlide }] },
-              navExpanded && styles.navBarVisible
-            ]}
-          >
-            <TouchableOpacity style={styles.navItem} onPress={() => toggleNav(false)}>
-              <BrainIcon active />
-              <Text style={[styles.navLabel, styles.navLabelActive]}>Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => { toggleNav(false); router.push('/faith'); }}>
-              <MessageNavIcon />
-              <Text style={styles.navLabel}>Faith</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => { toggleNav(false); router.push('/'); }}>
-              <CameraNavIcon />
-              <Text style={styles.navLabel}>Feels Like</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => { toggleNav(false); setComingSoonModal({ open: true, feature: 'banking' }); }}>
-              <LandmarkIcon />
-              <Text style={styles.navLabel}>Banking</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => { toggleNav(false); setComingSoonModal({ open: true, feature: 'analytics' }); }}>
-              <BarChartIcon />
-              <Text style={styles.navLabel}>Analytics</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navClose} onPress={() => toggleNav(false)}>
-              <ChevronRightIcon />
-            </TouchableOpacity>
-          </Animated.View>
-
-          {/* Input bar row */}
-          <Animated.View
-            style={[
-              styles.inputBarRow,
-              navExpanded && styles.inputBarHidden
-            ]}
-          >
-            {!inputFocused && (
-              <TouchableOpacity style={styles.homeButton} onPress={() => toggleNav(true)}>
-                <HomeIcon />
-              </TouchableOpacity>
-            )}
-            <View style={styles.inputBar}>
-              {inputFocused && (
-                <TouchableOpacity style={styles.plusButton} onPress={() => setInputFocused(false)}>
-                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round">
-                    <Path d="M12 5v14M5 12h14" />
-                  </Svg>
-                </TouchableOpacity>
-              )}
-              {!inputFocused && <View style={{ width: 8 }} />}
-              <TextInput
-                style={styles.textInput}
-                value={inputText}
-                onChangeText={setInputText}
-                placeholder="Ask about your profile..."
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                onFocus={() => setInputFocused(true)}
-                onBlur={() => setInputFocused(false)}
-                onSubmitEditing={() => askFaithAboutProfile(inputText)}
-                returnKeyType="send"
-              />
-              <TouchableOpacity style={styles.micButton}>
-                <MicIcon />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sendButton}
-                onPress={() => askFaithAboutProfile(inputText)}
-              >
-                <SendIcon />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </View>
-      </View>
+      <BottomInputBar
+        activeScreen="profile"
+        placeholder="Ask about your profile..."
+        value={inputText}
+        onChangeText={setInputText}
+        onSend={askFaithAboutProfile}
+        onNavigate={(screen) => {
+          if (screen === 'faith') router.push('/faith');
+          else if (screen === 'scan') router.push('/');
+        }}
+        onComingSoon={(feature) => setComingSoonModal({ open: true, feature })}
+        bottomInset={insets.bottom}
+        showMic={false}
+      />
 
       <ComingSoonModal
         visible={comingSoonModal.open}
@@ -821,46 +535,45 @@ export default function ProfileScreen() {
             </View>
 
             <View style={styles.settingsAvatarSection}>
-              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.settingsAvatar}>
-                <Text style={styles.settingsAvatarText}>{initials}</Text>
-              </LinearGradient>
+              {profile?.photo_url ? (
+                <Image source={{ uri: profile.photo_url }} style={styles.settingsAvatarImage} />
+              ) : (
+                <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.settingsAvatar}>
+                  <Text style={styles.settingsAvatarText}>{initials}</Text>
+                </LinearGradient>
+              )}
               <Text style={styles.settingsName}>{profile?.name || 'User'}</Text>
               <Text style={styles.settingsEmail}>{profile?.email || 'user@fincore.one'}</Text>
             </View>
 
             <View style={styles.settingsMenuItems}>
               <SettingsMenuItem
-                icon={<UserSettingsIcon />}
+                icon={<UserIcon size={18} />}
                 label="Personal Details"
                 onPress={() => setSettingsPage('personal')}
               />
               <SettingsMenuItem
-                icon={<ShieldSettingsIcon />}
+                icon={<ShieldIcon size={18} />}
                 label="Security & Privacy"
                 onPress={() => setSettingsPage('security')}
               />
               <SettingsMenuItem
-                icon={<BellSettingsIcon />}
+                icon={<BellIcon size={18} />}
                 label="Notifications"
                 onPress={() => setSettingsPage('notifications')}
               />
               <SettingsMenuItem
-                icon={<CreditCardSettingsIcon />}
-                label="Payment Methods"
-                onPress={() => setSettingsPage('payments')}
-              />
-              <SettingsMenuItem
-                icon={<SlidersSettingsIcon />}
+                icon={<SettingsIcon size={18} />}
                 label="Preferences"
                 onPress={() => setSettingsPage('preferences')}
               />
               <SettingsMenuItem
-                icon={<HelpCircleSettingsIcon />}
+                icon={<HelpCircleIcon size={18} />}
                 label="Help & Support"
                 onPress={() => setSettingsPage('help')}
               />
               <SettingsMenuItem
-                icon={<LogOutSettingsIcon />}
+                icon={<LogOutIcon size={18} />}
                 label="Sign Out"
                 onPress={handleSignOut}
                 danger
@@ -884,7 +597,8 @@ export default function ProfileScreen() {
       <Modal visible={settingsPage === 'security'} animationType="slide" presentationStyle="fullScreen">
         <SecurityPrivacy
           onBack={() => setSettingsPage(null)}
-          onDeleteAccount={() => {
+          onDeleteAccount={deleteAccount}
+          onDeleteSuccess={() => {
             setSettingsPage(null);
             closeSettingsMenu();
             clearUser();
@@ -894,9 +608,6 @@ export default function ProfileScreen() {
       </Modal>
       <Modal visible={settingsPage === 'notifications'} animationType="slide" presentationStyle="fullScreen">
         <Notifications onBack={() => setSettingsPage(null)} />
-      </Modal>
-      <Modal visible={settingsPage === 'payments'} animationType="slide" presentationStyle="fullScreen">
-        <PaymentMethods onBack={() => setSettingsPage(null)} />
       </Modal>
       <Modal visible={settingsPage === 'preferences'} animationType="slide" presentationStyle="fullScreen">
         <Preferences onBack={() => setSettingsPage(null)} />
@@ -915,72 +626,6 @@ export default function ProfileScreen() {
   );
 }
 
-function UserSettingsIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-      <Circle cx={12} cy={7} r={4} />
-    </Svg>
-  );
-}
-
-function ShieldSettingsIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </Svg>
-  );
-}
-
-function BellSettingsIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />
-    </Svg>
-  );
-}
-
-function CreditCardSettingsIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Rect x={1} y={4} width={22} height={16} rx={2} ry={2} />
-      <Line x1={1} y1={10} x2={23} y2={10} />
-    </Svg>
-  );
-}
-
-function SlidersSettingsIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Line x1={4} y1={21} x2={4} y2={14} />
-      <Line x1={4} y1={10} x2={4} y2={3} />
-      <Line x1={12} y1={21} x2={12} y2={12} />
-      <Line x1={12} y1={8} x2={12} y2={3} />
-      <Line x1={20} y1={21} x2={20} y2={16} />
-      <Line x1={20} y1={12} x2={20} y2={3} />
-      <Line x1={1} y1={14} x2={7} y2={14} />
-      <Line x1={9} y1={8} x2={15} y2={8} />
-      <Line x1={17} y1={16} x2={23} y2={16} />
-    </Svg>
-  );
-}
-
-function HelpCircleSettingsIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Circle cx={12} cy={12} r={10} />
-      <Path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01" />
-    </Svg>
-  );
-}
-
-function LogOutSettingsIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#FF453A" strokeWidth={2}>
-      <Path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-    </Svg>
-  );
-}
 
 interface SettingsMenuItemProps {
   icon: React.ReactNode;
@@ -1047,6 +692,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarShine: {
     ...StyleSheet.absoluteFillObject,
@@ -1319,114 +968,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
-  inputBarContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  inputBarWrapper: {
-    height: 50,
-    position: 'relative',
-  },
-  navBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 50,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-  },
-  navBarVisible: {
-    zIndex: 20,
-  },
-  navItem: {
-    width: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navLabel: {
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.5)',
-    marginTop: 2,
-  },
-  navLabelActive: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  navClose: {
-    position: 'absolute',
-    right: 4,
-    top: '50%',
-    marginTop: -7,
-    width: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inputBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  inputBarHidden: {
-    opacity: 0,
-  },
-  homeButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inputBar: {
-    flex: 1,
-    height: 50,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 8,
-    paddingRight: 6,
-  },
-  plusButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 4,
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#fff',
-  },
-  micButton: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
-  },
-  sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#005FCC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
-  },
   settingsOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1001,
@@ -1466,6 +1007,14 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.3)',
+    marginBottom: 12,
+  },
+  settingsAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.3)',
     marginBottom: 12,

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { SettingsPage } from './SettingsPage';
 import { SettingsSection } from './SettingsSection';
 import { API_BASE_URL } from '../../config';
@@ -13,6 +15,12 @@ interface PersonalDetailsProps {
   profile?: {
     name: string | null;
     email: string | null;
+    phone: string | null;
+    dob: string | null;
+    address: string | null;
+    occupation: string | null;
+    nationality: string | null;
+    photo_url: string | null;
   } | null;
   onProfileUpdate?: () => void;
 }
@@ -115,6 +123,14 @@ function EditableRow({ icon, label, value, onChangeText, isLast = false, keyboar
   );
 }
 
+// DEV TEST DATA - only for fields collected in intro tour
+const DEV_TEST_DATA = {
+  name: 'Quinn Condor',
+  email: 'quinncondor@gmail.com',
+  phone: '07777777777',
+  dob: '19/12/2000',
+};
+
 export function PersonalDetails({ onBack, initials, userId, profile, onProfileUpdate }: PersonalDetailsProps) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -123,17 +139,68 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
   const [address, setAddress] = useState('');
   const [occupation, setOccupation] = useState('');
   const [nationality, setNationality] = useState('');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Load profile data on mount
+  // Load profile data on mount - use test data as fallback for intro tour fields only
   useEffect(() => {
-    if (profile) {
-      setFullName(profile.name || '');
-      setEmail(profile.email || '');
-    }
+    // Intro tour fields - use test data as dev fallback
+    setFullName(profile?.name || DEV_TEST_DATA.name);
+    setEmail(profile?.email || DEV_TEST_DATA.email);
+    setPhone(profile?.phone || DEV_TEST_DATA.phone);
+    setDob(profile?.dob || DEV_TEST_DATA.dob);
+    // NOT collected in intro tour - only show if actually in profile, otherwise blank
+    setAddress(profile?.address ?? '');
+    setOccupation(profile?.occupation ?? '');
+    setNationality(profile?.nationality ?? '');
+    setPhotoUrl(profile?.photo_url ?? null);
   }, [profile]);
+
+  const handlePickPhoto = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0] && userId) {
+        setIsUploadingPhoto(true);
+
+        const manipulated = await ImageManipulator.manipulateAsync(
+          result.assets[0].uri,
+          [{ resize: { width: 400, height: 400 } }],
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+        );
+
+        const response = await fetch(`${API_BASE_URL}/profile/${userId}/photo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            image_base64: manipulated.base64,
+            media_type: 'image/jpeg',
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setPhotoUrl(data.photo_url);
+          onProfileUpdate?.();
+        } else {
+          throw new Error('Upload failed');
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to upload photo. Please try again.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   // Track changes
   const handleFieldChange = (setter: (value: string) => void) => (value: string) => {
@@ -149,14 +216,18 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
     setSaveStatus('idle');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/profile`, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE_URL}/profile/${userId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: userId,
           name: fullName,
           email: email,
-          // Additional fields would need backend support
+          phone: phone,
+          dob: dob,
+          address: address,
+          occupation: occupation,
+          nationality: nationality,
         }),
       });
 
@@ -179,14 +250,22 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
   return (
     <SettingsPage title="Personal Details" onBack={onBack}>
       <View style={styles.avatarSection}>
-        <View style={styles.avatarContainer}>
-          <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatar}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </LinearGradient>
-          <TouchableOpacity style={styles.cameraBadge}>
-            <CameraIcon />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.avatarContainer} onPress={handlePickPhoto} disabled={isUploadingPhoto}>
+          {photoUrl ? (
+            <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+          ) : (
+            <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </LinearGradient>
+          )}
+          <View style={styles.cameraBadge}>
+            {isUploadingPhoto ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <CameraIcon />
+            )}
+          </View>
+        </TouchableOpacity>
       </View>
 
       <SettingsSection>
@@ -275,6 +354,13 @@ const styles = StyleSheet.create({
     borderRadius: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  avatarImage: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.3)',
   },

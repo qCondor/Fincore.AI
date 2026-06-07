@@ -39,6 +39,14 @@ class AnalyzeRequest(BaseModel):
     session_id: Optional[str] = None  # For Langfuse session continuity
 
 
+class AnalyzeTextRequest(BaseModel):
+    product_description: str  # e.g., "Big ole cookie", "iPhone 15 Pro"
+    user_context: Optional[str] = None
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    session_id: Optional[str] = None
+
+
 class AnalyzeResponse(BaseModel):
     success: bool
     analysis: Optional[AnalysisResult] = None

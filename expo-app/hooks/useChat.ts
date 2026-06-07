@@ -201,11 +201,22 @@ export function useChat({
   }, []);
 
   const startNewSession = useCallback(() => {
+    // If streaming, close the connection but keep the partial message
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      // Mark any streaming message as complete
+      setMessages((prev) =>
+        prev.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+      );
+    }
+    setIsTyping(false);
+
     const newSessionId = generateSessionId();
     sessionIdRef.current = newSessionId;
     setCurrentSessionId(newSessionId);
     setMessages([]);
-    eventSourceRef.current?.close();
+    setSuggestions([]);
     return newSessionId;
   }, []);
 

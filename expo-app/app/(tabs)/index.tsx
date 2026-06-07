@@ -1,13 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
-  Alert,
-  Animated,
-  Dimensions,
   ScrollView,
   Image,
   KeyboardAvoidingView,
@@ -16,324 +12,40 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop, ClipPath, Rect, G } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { ComingSoonModal } from '../../components/ComingSoonModal';
 import { HistoryDrawer } from '../../components/HistoryDrawer';
 import { useProfile } from '../../hooks/useProfile';
-import { useScan, type AnalysisResult } from '../../hooks/useScan';
+import { useScan } from '../../hooks/useScan';
 import { useUser } from '../../contexts/UserContext';
 import * as ImagePicker from 'expo-image-picker';
-
-function MenuIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.2} strokeLinecap="round">
-      <Line x1={4} y1={7} x2={20} y2={7} />
-      <Line x1={4} y1={12} x2={20} y2={12} />
-      <Line x1={4} y1={17} x2={20} y2={17} />
-    </Svg>
-  );
-}
-
-function FlashIcon({ on }: { on: boolean }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
-        stroke={on ? '#FFD60A' : '#fff'}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill={on ? '#FFD60A' : 'none'}
-      />
-    </Svg>
-  );
-}
-
-function CameraIcon() {
-  return (
-    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11z"
-        stroke="#005FCC"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M12 17a4 4 0 100-8 4 4 0 000 8z"
-        stroke="#005FCC"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function BrainIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2}>
-      <Path d="M12 2a4 4 0 014 4v2a4 4 0 01-8 0V6a4 4 0 014-4z" />
-      <Path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
-    </Svg>
-  );
-}
-
-function MessageIcon({ active }: { active?: boolean }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : 'rgba(255,255,255,0.7)'} strokeWidth={2}>
-      <Path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-    </Svg>
-  );
-}
-
-function CameraNavIcon({ active }: { active?: boolean }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : 'rgba(255,255,255,0.7)'} strokeWidth={2}>
-      <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11z" />
-      <Path d="M12 17a4 4 0 100-8 4 4 0 000 8z" />
-    </Svg>
-  );
-}
-
-function LandmarkIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2}>
-      <Line x1={3} y1={22} x2={21} y2={22} />
-      <Line x1={6} y1={18} x2={6} y2={11} />
-      <Line x1={10} y1={18} x2={10} y2={11} />
-      <Line x1={14} y1={18} x2={14} y2={11} />
-      <Line x1={18} y1={18} x2={18} y2={11} />
-      <Path d="M12 2L2 7h20L12 2z" />
-    </Svg>
-  );
-}
-
-function BarChartIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth={2}>
-      <Line x1={18} y1={20} x2={18} y2={10} />
-      <Line x1={12} y1={20} x2={12} y2={4} />
-      <Line x1={6} y1={20} x2={6} y2={14} />
-    </Svg>
-  );
-}
-
-function ChevronRightIcon() {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={2}>
-      <Path d="M9 18l6-6-6-6" />
-    </Svg>
-  );
-}
-
-function WaveBackground() {
-  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-  const wave1Anim = useRef(new Animated.Value(0)).current;
-  const wave2Anim = useRef(new Animated.Value(0)).current;
-  const wave3Anim = useRef(new Animated.Value(0)).current;
-  const wave4Anim = useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    const createWaveAnimation = (anim: Animated.Value, duration: number, delay: number) => {
-      setTimeout(() => {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(anim, { toValue: 1, duration: duration / 2, useNativeDriver: true }),
-            Animated.timing(anim, { toValue: 0, duration: duration / 2, useNativeDriver: true }),
-          ])
-        ).start();
-      }, delay);
-    };
-
-    createWaveAnimation(wave1Anim, 6000, 0);
-    createWaveAnimation(wave2Anim, 7000, 500);
-    createWaveAnimation(wave3Anim, 8000, 1000);
-    createWaveAnimation(wave4Anim, 5000, 1500);
-  }, []);
-
-  const wave1Style = {
-    transform: [
-      { translateY: wave1Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -10] }) },
-    ],
-  };
-
-  const wave2Style = {
-    transform: [
-      { translateY: wave2Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 8] }) },
-    ],
-  };
-
-  const wave3Style = {
-    transform: [
-      { translateY: wave3Anim.interpolate({ inputRange: [0, 1], outputRange: [0, 12] }) },
-    ],
-  };
-
-  const wave4Style = {
-    transform: [
-      { translateY: wave4Anim.interpolate({ inputRange: [0, 1], outputRange: [0, -6] }) },
-    ],
-  };
-
-  return (
-    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
-      <Svg
-        width="100%"
-        height="100%"
-        viewBox="0 0 393 852"
-        preserveAspectRatio="none"
-        style={StyleSheet.absoluteFill}
-      >
-        <Defs>
-          <SvgLinearGradient id="base-gradient-scan" x1="0" y1="0.5" x2="1" y2="0.5">
-            <Stop offset="0%" stopColor="#3CB8F0" />
-            <Stop offset="50%" stopColor="#0A6FE8" />
-            <Stop offset="100%" stopColor="#0035A0" />
-          </SvgLinearGradient>
-        </Defs>
-        <Path d="M0,0 L393,0 L393,852 L0,852 Z" fill="url(#base-gradient-scan)" />
-      </Svg>
-      <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, wave1Style]}>
-        <Svg width="100%" height="100%" viewBox="0 0 393 852" preserveAspectRatio="none">
-          <Defs>
-            <ClipPath id="clip-scan-1">
-              <Rect x="0" y="0" width="393" height="852" />
-            </ClipPath>
-            <SvgLinearGradient id="wave1-anim-scan" x1="0.8" y1="0" x2="0.2" y2="1">
-              <Stop offset="0%" stopColor="#A8EAFF" stopOpacity={0.55} />
-              <Stop offset="45%" stopColor="#70D8FF" stopOpacity={0.35} />
-              <Stop offset="100%" stopColor="#5ED4FF" stopOpacity={0.05} />
-            </SvgLinearGradient>
-          </Defs>
-          <G clipPath="url(#clip-scan-1)">
-            <Path d="M393,-50 C410,250 100,350 0,550 C-30,650 50,800 0,902 L393,902 Z" fill="url(#wave1-anim-scan)" />
-          </G>
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, wave2Style]}>
-        <Svg width="100%" height="100%" viewBox="0 0 393 852" preserveAspectRatio="none">
-          <Defs>
-            <ClipPath id="clip-scan-2">
-              <Rect x="0" y="0" width="393" height="852" />
-            </ClipPath>
-            <SvgLinearGradient id="wave2-anim-scan" x1="0.7" y1="0" x2="0.3" y2="1">
-              <Stop offset="0%" stopColor="#6DDDFF" stopOpacity={0.4} />
-              <Stop offset="50%" stopColor="#44BBFF" stopOpacity={0.25} />
-              <Stop offset="100%" stopColor="#1A90FF" stopOpacity={0.05} />
-            </SvgLinearGradient>
-          </Defs>
-          <G clipPath="url(#clip-scan-2)">
-            <Path d="M393,-150 C400,150 50,250 0,420 C-30,530 30,700 0,902 L393,902 Z" fill="url(#wave2-anim-scan)" />
-          </G>
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, wave3Style]}>
-        <Svg width="100%" height="100%" viewBox="0 0 393 852" preserveAspectRatio="none">
-          <Defs>
-            <ClipPath id="clip-scan-3">
-              <Rect x="0" y="0" width="393" height="852" />
-            </ClipPath>
-            <SvgLinearGradient id="wave3-anim-scan" x1="0.6" y1="0" x2="0.4" y2="1">
-              <Stop offset="0%" stopColor="#50C8FF" stopOpacity={0.35} />
-              <Stop offset="50%" stopColor="#2AA0F0" stopOpacity={0.2} />
-              <Stop offset="100%" stopColor="#0A6FE8" stopOpacity={0.05} />
-            </SvgLinearGradient>
-          </Defs>
-          <G clipPath="url(#clip-scan-3)">
-            <Path d="M393,-250 C390,80 20,170 0,300 C-30,400 10,580 0,902 L393,902 Z" fill="url(#wave3-anim-scan)" />
-          </G>
-        </Svg>
-      </Animated.View>
-      <Animated.View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }, wave4Style]}>
-        <Svg width="100%" height="100%" viewBox="0 0 393 852" preserveAspectRatio="none">
-          <Defs>
-            <ClipPath id="clip-scan-4">
-              <Rect x="0" y="0" width="393" height="852" />
-            </ClipPath>
-            <SvgLinearGradient id="wave4-anim-scan" x1="0.5" y1="0" x2="0.5" y2="1">
-              <Stop offset="0%" stopColor="#1A5FAA" stopOpacity={0.4} />
-              <Stop offset="50%" stopColor="#0D4080" stopOpacity={0.25} />
-              <Stop offset="100%" stopColor="#003070" stopOpacity={0.05} />
-            </SvgLinearGradient>
-          </Defs>
-          <G clipPath="url(#clip-scan-4)">
-            <Path d="M393,400 C350,550 200,750 100,820 C50,860 0,840 0,902 L393,902 Z" fill="url(#wave4-anim-scan)" />
-          </G>
-        </Svg>
-      </Animated.View>
-    </View>
-  );
-}
-
-function MicIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="rgba(255,255,255,0.5)">
-      <Path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-      <Path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" stroke="rgba(255,255,255,0.5)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </Svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
-        stroke="#fff"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-function HomeIcon() {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-        stroke="#fff"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path d="M9 22V12h6v10" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import {
+  MenuIcon,
+  FlashIcon,
+  CameraIcon,
+  BackArrowIcon,
+  LockIcon,
+} from '../../components/icons';
+import { WaveBackground } from '../../components/WaveBackground';
+import { BottomInputBar } from '../../components/BottomInputBar';
+import { MaskedAmount } from '../../components/MaskedText';
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userId } = useUser();
-  const { initials } = useProfile({ userId: userId ?? undefined });
+  const { initials, profile } = useProfile({ userId: userId ?? undefined });
   const [permission, requestPermission] = useCameraPermissions();
   const [flashOn, setFlashOn] = useState(false);
-  const [inputFocused, setInputFocused] = useState(false);
   const [inputText, setInputText] = useState('');
-  const [navExpanded, setNavExpanded] = useState(false);
   const [comingSoonModal, setComingSoonModal] = useState<{ open: boolean; feature: 'banking' | 'analytics' | 'blueprint' | null }>({ open: false, feature: null });
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [isFromHistory, setIsFromHistory] = useState(false);
-  const navSlide = useRef(new Animated.Value(-SCREEN_WIDTH)).current;
 
   const scan = useScan({ userId: userId ?? undefined });
-
-  const toggleNav = (show: boolean) => {
-    setNavExpanded(show);
-    Animated.timing(navSlide, {
-      toValue: show ? 0 : -SCREEN_WIDTH,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  };
 
   const handleCapture = async () => {
     console.log('[ScanScreen] handleCapture called, isAnalysing:', scan.isAnalysing);
@@ -426,22 +138,24 @@ export default function ScanScreen() {
   if (showResult && scan.analysisResult) {
     return (
       <View style={styles.container}>
-        <WaveBackground />
+        <WaveBackground prefix="scan" />
 
         {/* Header */}
         <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
           <View style={styles.topBarRow}>
             <TouchableOpacity style={styles.menuButton} onPress={handleBackFromResult}>
-              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-                <Path d="M19 12H5M12 19l-7-7 7-7" />
-              </Svg>
+              <BackArrowIcon />
             </TouchableOpacity>
             <Text style={styles.topBarTitle}>Feels Like</Text>
-            <TouchableOpacity style={styles.avatarButton}>
-              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
-                <View style={styles.avatarShine} />
-                <Text style={styles.avatarText}>{initials}</Text>
-              </LinearGradient>
+            <TouchableOpacity style={styles.avatarButton} onPress={() => router.push({ pathname: '/profile', params: { openSettings: 'true' } })}>
+              {profile?.photo_url ? (
+                <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
+              ) : (
+                <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
+                  <View style={styles.avatarShine} />
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </LinearGradient>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -493,7 +207,7 @@ export default function ScanScreen() {
             <View style={styles.priceCard}>
               <Text style={styles.priceLabel}>Actual Price</Text>
               {scan.analysisResult.estimated_price ? (
-                <Text style={styles.priceValue}>£{scan.analysisResult.estimated_price.toFixed(2)}</Text>
+                <MaskedAmount amount={scan.analysisResult.estimated_price} style={styles.priceValue} />
               ) : isFromHistory ? (
                 <Text style={styles.priceLoading}>N/A</Text>
               ) : (
@@ -503,10 +217,7 @@ export default function ScanScreen() {
             <View style={styles.feelsLikeCard}>
               <Text style={styles.feelsLikeLabel}>Feels Like</Text>
               <View style={styles.feelsLikeLocked}>
-                <Svg width={28} height={28} viewBox="0 0 24 24" fill="#005FCC">
-                  <Path d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2z" />
-                  <Path d="M7 11V7a5 5 0 0110 0v4" stroke="#005FCC" strokeWidth={2} fill="none" />
-                </Svg>
+                <LockIcon />
                 <Text style={styles.feelsLikeLockedTitle}>Coming Soon</Text>
                 <Text style={styles.feelsLikeLockedDesc}>See the psychological cost</Text>
                 <TouchableOpacity
@@ -595,7 +306,7 @@ export default function ScanScreen() {
       keyboardVerticalOffset={0}
     >
       {/* Wave background */}
-      <WaveBackground />
+      <WaveBackground prefix="scan" />
 
       {/* TopBar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
@@ -604,11 +315,15 @@ export default function ScanScreen() {
             <MenuIcon />
           </TouchableOpacity>
           <Text style={styles.topBarTitle}>Feels Like</Text>
-          <TouchableOpacity style={styles.avatarButton}>
-            <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
-              <View style={styles.avatarShine} />
-              <Text style={styles.avatarText}>{initials}</Text>
-            </LinearGradient>
+          <TouchableOpacity style={styles.avatarButton} onPress={() => router.push({ pathname: '/profile', params: { openSettings: 'true' } })}>
+            {profile?.photo_url ? (
+              <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
+            ) : (
+              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
+                <View style={styles.avatarShine} />
+                <Text style={styles.avatarText}>{initials}</Text>
+              </LinearGradient>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -674,85 +389,31 @@ export default function ScanScreen() {
         </View>
       </View>
 
-      {/* Bottom input bar with sliding navbar */}
-      <View style={[styles.inputBarContainer, { paddingBottom: insets.bottom + 8 }]}>
-        <View style={styles.inputBarWrapper}>
-          {/* Sliding navbar */}
-          <Animated.View
-            style={[
-              styles.navBar,
-              { transform: [{ translateX: navSlide }] },
-              navExpanded && styles.navBarVisible
-            ]}
-          >
-            <TouchableOpacity style={styles.navItem} onPress={() => { toggleNav(false); router.push('/profile'); }}>
-              <BrainIcon />
-              <Text style={styles.navLabel}>Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => { toggleNav(false); router.push('/faith'); }}>
-              <MessageIcon />
-              <Text style={styles.navLabel}>Faith</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => toggleNav(false)}>
-              <CameraNavIcon active />
-              <Text style={[styles.navLabel, styles.navLabelActive]}>Feels Like</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => { toggleNav(false); setComingSoonModal({ open: true, feature: 'banking' }); }}>
-              <LandmarkIcon />
-              <Text style={styles.navLabel}>Banking</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => { toggleNav(false); setComingSoonModal({ open: true, feature: 'analytics' }); }}>
-              <BarChartIcon />
-              <Text style={styles.navLabel}>Analytics</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navClose} onPress={() => toggleNav(false)}>
-              <ChevronRightIcon />
-            </TouchableOpacity>
-          </Animated.View>
-
-          {/* Input bar row */}
-          <Animated.View
-            style={[
-              styles.inputBarRow,
-              navExpanded && styles.inputBarHidden
-            ]}
-          >
-            {/* Home button — hides when focused */}
-            {!inputFocused && (
-              <TouchableOpacity style={styles.homeButton} onPress={() => toggleNav(true)}>
-                <HomeIcon />
-              </TouchableOpacity>
-            )}
-
-            {/* Input bar */}
-            <View style={styles.inputBar}>
-              {inputFocused && (
-                <TouchableOpacity style={styles.plusButton} onPress={() => setInputFocused(false)}>
-                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2.5} strokeLinecap="round">
-                    <Path d="M12 5v14M5 12h14" />
-                  </Svg>
-                </TouchableOpacity>
-              )}
-              {!inputFocused && <View style={{ width: 8 }} />}
-              <TextInput
-                style={styles.textInput}
-                value={inputText}
-                onChangeText={setInputText}
-                placeholder="Enter Manually"
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                onFocus={() => setInputFocused(true)}
-                onBlur={() => setInputFocused(false)}
-              />
-              <TouchableOpacity style={styles.micButton} onPress={handleUpload}>
-                <MicIcon />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.sendButton}>
-                <SendIcon />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        </View>
-      </View>
+      <BottomInputBar
+        activeScreen="scan"
+        placeholder="Enter Manually"
+        value={inputText}
+        onChangeText={setInputText}
+        onSend={async () => {
+          if (inputText.trim() && !scan.isAnalysing) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            const result = await scan.analyseFromText(inputText.trim());
+            if (result) {
+              setInputText('');
+              setIsFromHistory(false);
+              setShowResult(true);
+            }
+          }
+        }}
+        onMicPress={handleUpload}
+        onNavigate={(screen) => {
+          if (screen === 'profile') router.push('/profile');
+          else if (screen === 'faith') router.push('/faith');
+        }}
+        onComingSoon={(feature) => setComingSoonModal({ open: true, feature })}
+        bottomInset={insets.bottom}
+        disabled={scan.isAnalysing}
+      />
 
       <ComingSoonModal
         visible={comingSoonModal.open}
@@ -844,6 +505,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   avatarShine: {
     ...StyleSheet.absoluteFillObject,
@@ -965,114 +630,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: 'rgba(255,255,255,0.5)',
     textDecorationLine: 'underline',
-  },
-  inputBarContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
-  inputBarWrapper: {
-    height: 50,
-    position: 'relative',
-  },
-  navBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 50,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-  },
-  navBarVisible: {
-    zIndex: 20,
-  },
-  navItem: {
-    width: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navLabel: {
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.5)',
-    marginTop: 2,
-  },
-  navLabelActive: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  navClose: {
-    position: 'absolute',
-    right: 4,
-    top: '50%',
-    marginTop: -7,
-    width: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inputBarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  inputBarHidden: {
-    opacity: 0,
-  },
-  homeButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inputBar: {
-    flex: 1,
-    height: 50,
-    borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingLeft: 8,
-    paddingRight: 6,
-  },
-  plusButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 4,
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#fff',
-  },
-  micButton: {
-    width: 28,
-    height: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
-  },
-  sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#005FCC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 4,
   },
   // Scan result styles
   resultScroll: {
