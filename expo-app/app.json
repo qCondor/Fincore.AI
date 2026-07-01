@@ -16,12 +16,17 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "one.fincore.app",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,
           "NSExceptionDomains": {
             "localhost": {
               "NSExceptionAllowsInsecureHTTPLoads": true
+            },
+            "35.178.139.5": {
+              "NSExceptionAllowsInsecureHTTPLoads": true,
+              "NSIncludesSubdomains": false
             }
           }
         },
@@ -35,8 +40,7 @@
       },
       "package": "com.fincore.app",
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.CAMERA"
       ]
     },
     "web": {

@@ -239,7 +239,12 @@ export default function FaithScreen() {
               <Text style={styles.headerTitle}>Faith</Text>
               <Text style={styles.headerSubtitle}>Your financial AI companion</Text>
             </View>
-            <TouchableOpacity style={styles.newChatButton} onPress={handleNewChat}>
+            <TouchableOpacity
+              style={styles.newChatButton}
+              onPress={handleNewChat}
+              accessibilityLabel="Start new chat"
+              accessibilityHint="Clears the current conversation and starts fresh"
+            >
               <PlusIcon />
             </TouchableOpacity>
             <TouchableOpacity style={styles.avatarButton} onPress={() => router.push({ pathname: '/profile', params: { openSettings: 'true' } })}>
@@ -387,6 +392,10 @@ export default function FaithScreen() {
           value={inputText}
           onChangeText={setInputText}
           onSend={handleSend}
+          onMicPress={() => {
+            // Voice input coming soon
+          }}
+          showMic={false}
           onNavigate={(screen) => {
             if (screen === 'profile') router.push('/profile');
             else if (screen === 'scan') router.push('/');

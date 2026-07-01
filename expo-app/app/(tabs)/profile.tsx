@@ -221,6 +221,7 @@ export default function ProfileScreen() {
   }, [params.openSettings]);
 
   const closeSettingsMenu = () => {
+    hasOpenedSettings.current = false;
     Animated.timing(settingsSlide, {
       toValue: SCREEN_WIDTH,
       duration: 350,

@@ -48,12 +48,9 @@ export default function ScanScreen() {
   const scan = useScan({ userId: userId ?? undefined });
 
   const handleCapture = async () => {
-    console.log('[ScanScreen] handleCapture called, isAnalysing:', scan.isAnalysing);
     if (scan.isAnalysing) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    console.log('[ScanScreen] Calling captureAndAnalyse...');
     const result = await scan.captureAndAnalyse();
-    console.log('[ScanScreen] Result:', result ? 'success' : 'null');
     if (result) {
       setIsFromHistory(false);
       setShowResult(true);
@@ -61,26 +58,22 @@ export default function ScanScreen() {
   };
 
   const handleUpload = async () => {
-    console.log('[ScanScreen] handleUpload called');
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.8,
       });
-      console.log('[ScanScreen] ImagePicker result:', result.canceled ? 'canceled' : 'selected');
 
       if (!result.canceled && result.assets[0]) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        console.log('[ScanScreen] Analysing image...');
         const analysisResult = await scan.analyseFromUri(result.assets[0].uri);
-        console.log('[ScanScreen] Analysis result:', analysisResult ? 'success' : 'null');
         if (analysisResult) {
           setIsFromHistory(false);
           setShowResult(true);
         }
       }
     } catch (e) {
-      console.log('[ScanScreen] Upload error:', e);
+      // Silently handle upload errors
     }
   };
 

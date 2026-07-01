@@ -14,10 +14,15 @@ if env_path.exists():
     load_dotenv(env_path)
 
 import boto3
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
 from coach import stream_coach_response, save_profile, get_profile
 from scorer import score_survey
 from math_utils import calculate_psychology_cost
@@ -334,6 +339,8 @@ def update_scan(user_id: str, scan_id: str, updates: dict, bucket: str) -> dict 
 
 
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.on_event("shutdown")
@@ -343,11 +350,20 @@ async def shutdown_event():
     logger.info("Langfuse traces flushed on shutdown")
 
 
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8081",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8081",
+    "https://fincore.one",
+    "https://api.fincore.one",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 BUCKET = os.environ["FINCORE_S3_BUCKET"]
 
@@ -456,7 +472,7 @@ def upload_profile_photo(user_id: str, req: ProfilePhotoRequest):
         return {"status": "ok", "photo_url": photo_url}
     except Exception as e:
         logger.exception("Failed to upload profile photo")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to upload photo")
 
 
 @app.get("/profile/{user_id}")
@@ -544,7 +560,7 @@ def delete_user(user_id: str):
         raise
     except Exception as e:
         logger.exception(f"Failed to delete user {user_id}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete account")
 
 
 @app.get("/users/{user_id}/scans")
@@ -609,7 +625,8 @@ def patch_scan(user_id: str, scan_id: str, req: ScanUpdateRequest):
 
 
 @app.post("/chat")
-async def chat(req: ChatRequest):
+@limiter.limit("30/minute")
+async def chat(request: Request, req: ChatRequest):
     # Load conversation history for THIS session only
     if req.session_id:
         conversation_history = await asyncio.to_thread(
@@ -713,7 +730,8 @@ async def chat(req: ChatRequest):
 
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(req: AnalyzeRequest):
+@limiter.limit("20/minute")
+async def analyze(request: Request, req: AnalyzeRequest):
     """Analyse a product image via AWS Bedrock and return a financial score."""
     # Generate scan_id upfront so we can pass it to tracing
     scan_id = str(uuid.uuid4())[:8] if req.user_id else None
@@ -808,7 +826,8 @@ Use British English. Be practical and helpful, not preachy."""
 
 
 @app.post("/analyze-text", response_model=AnalyzeResponse)
-async def analyze_text(req: AnalyzeTextRequest):
+@limiter.limit("20/minute")
+async def analyze_text(request: Request, req: AnalyzeTextRequest):
     """Analyse a product from text description (no image required)."""
     scan_id = str(uuid.uuid4())[:8] if req.user_id else None
 
@@ -1049,21 +1068,19 @@ class ChangePasswordRequest(BaseModel):
 @app.post("/change-password")
 async def change_password(req: ChangePasswordRequest):
     """Change user password (placeholder - integrate with your auth provider)."""
+    import bcrypt
+
     profile = get_profile(req.user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # TODO: Integrate with actual auth provider (Cognito, Auth0, etc.)
-    # For now, store hashed password in profile
-    import hashlib
     current_hash = profile.get("password_hash")
 
     if current_hash:
-        provided_hash = hashlib.sha256(req.current_password.encode()).hexdigest()
-        if provided_hash != current_hash:
+        if not bcrypt.checkpw(req.current_password.encode(), current_hash.encode()):
             raise HTTPException(status_code=401, detail="Current password is incorrect")
 
-    new_hash = hashlib.sha256(req.new_password.encode()).hexdigest()
+    new_hash = bcrypt.hashpw(req.new_password.encode(), bcrypt.gensalt()).decode()
     profile["password_hash"] = new_hash
     save_profile(req.user_id, profile, BUCKET)
 
@@ -1094,8 +1111,8 @@ async def send_2fa_code(req: TwoFactorSendRequest):
     save_profile(req.user_id, profile, BUCKET)
 
     # TODO: Send SMS via Twilio/SNS
-    # For development, log the code
-    logger.info(f"[2FA] Code for {req.user_id}: {code}")
+    # In production, integrate with a real SMS provider
+    logger.info(f"[2FA] Code requested for {req.user_id}")
 
     return {"status": "ok", "message": "Code sent"}
 
@@ -1106,7 +1123,8 @@ class TwoFactorVerifyRequest(BaseModel):
 
 
 @app.post("/2fa/verify")
-async def verify_2fa_code(req: TwoFactorVerifyRequest):
+@limiter.limit("5/minute")
+async def verify_2fa_code(request: Request, req: TwoFactorVerifyRequest):
     """Verify a 2FA code and enable 2FA for the user."""
     profile = get_profile(req.user_id, BUCKET)
     if not profile:
@@ -1364,7 +1382,7 @@ async def send_push_notification(user_id: str, req: SendNotificationRequest):
             return {"status": "ok", "result": result}
     except Exception as e:
         logger.error(f"[Push] Failed to send notification: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to send notification")
 
 
 class BroadcastNotificationRequest(BaseModel):
@@ -1375,9 +1393,16 @@ class BroadcastNotificationRequest(BaseModel):
 
 
 @app.post("/admin/broadcast-notification")
-async def broadcast_notification(req: BroadcastNotificationRequest):
+async def broadcast_notification(
+    req: BroadcastNotificationRequest,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+):
     """Broadcast a notification to all users (admin endpoint)."""
     import httpx
+
+    admin_key = os.getenv("FINCORE_ADMIN_KEY")
+    if not admin_key or x_admin_key != admin_key:
+        raise HTTPException(status_code=401, detail="Invalid admin key")
 
     # List all user profiles
     try:
@@ -1387,7 +1412,8 @@ async def broadcast_notification(req: BroadcastNotificationRequest):
             MaxKeys=1000
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to list users for broadcast")
+        raise HTTPException(status_code=500, detail="Failed to send broadcast")
 
     messages = []
     user_count = 0
@@ -1442,7 +1468,7 @@ async def broadcast_notification(req: BroadcastNotificationRequest):
         return {"status": "ok", "sent_to": user_count}
     except Exception as e:
         logger.error(f"[Push] Broadcast failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to send broadcast")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

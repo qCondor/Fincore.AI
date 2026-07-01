@@ -34,21 +34,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [authProvider, setAuthProviderState] = useState<AuthProvider>('anonymous');
   const [isLoading, setIsLoading] = useState(true);
 
-  // DEV TEST USER - comment out for production
-  const DEV_TEST_USER = {
-    name: 'Quinn Condor',
-    email: 'quinncondor@gmail.com',
-    phone: '07777777777',
-    dob: '19/12/2000',
-    big_five: {
-      openness: 72,
-      conscientiousness: 58,
-      extraversion: 81,
-      agreeableness: 65,
-      neuroticism: 43,
-    },
-  };
-
   useEffect(() => {
     const loadUser = async () => {
       try {
@@ -62,21 +47,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           await SecureStore.setItemAsync(USER_ID_KEY, storedUserId);
         }
 
-        // DEV: Use test user if no stored user and create profile on backend
-        if (!storedUserName) {
-          storedUserName = DEV_TEST_USER.name;
-          storedEmail = DEV_TEST_USER.email;
-
-          // Create profile on backend with Big Five scores
-          apiPost('/profile', {
-            user_id: storedUserId,
-            name: DEV_TEST_USER.name,
-            email: DEV_TEST_USER.email,
-            big_five: DEV_TEST_USER.big_five,
-            auth_provider: 'anonymous',
-          }).catch(console.error);
-        }
-
         setUserId(storedUserId);
         setUserNameState(storedUserName);
         setUserEmailState(storedEmail);
@@ -87,9 +57,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         console.error('Failed to load user:', error);
         const fallbackId = generateUserId();
         setUserId(fallbackId);
-        // DEV: Use test user on error
-        setUserNameState(DEV_TEST_USER.name);
-        setUserEmailState(DEV_TEST_USER.email);
       } finally {
         setIsLoading(false);
       }

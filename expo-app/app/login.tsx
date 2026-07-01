@@ -401,21 +401,35 @@ export default function LoginScreen() {
                       </TouchableOpacity>
                     )}
 
-                    <TouchableOpacity
-                      style={styles.termsRow}
-                      onPress={() => setTermsAccepted(!termsAccepted)}
-                    >
-                      <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
-                        {termsAccepted && <Text style={styles.checkmark}>✓</Text>}
-                      </View>
+                    <View style={styles.termsRow}>
+                      <TouchableOpacity
+                        onPress={() => setTermsAccepted(!termsAccepted)}
+                        style={styles.checkboxTouchable}
+                      >
+                        <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
+                          {termsAccepted && <Text style={styles.checkmark}>✓</Text>}
+                        </View>
+                      </TouchableOpacity>
                       <Text style={styles.termsText}>
-                        I agree to the <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
-                        <Text style={styles.termsLink}>Privacy Policy</Text>
+                        I agree to the{' '}
+                        <Text
+                          style={styles.termsLink}
+                          onPress={() => WebBrowser.openBrowserAsync('https://fincore.one/terms')}
+                        >
+                          Terms of Service
+                        </Text>
+                        {' '}and{' '}
+                        <Text
+                          style={styles.termsLink}
+                          onPress={() => WebBrowser.openBrowserAsync('https://fincore.one/privacy')}
+                        >
+                          Privacy Policy
+                        </Text>
                       </Text>
-                    </TouchableOpacity>
+                    </View>
 
                     <View style={styles.securityBadge}>
-                      <Text style={styles.securityText}>🔒 Two-factor verification required</Text>
+                      <Text style={styles.securityText}>🔒 Secure sign-in with encryption</Text>
                     </View>
                   </BlurView>
                 </View>
@@ -538,6 +552,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginTop: 12,
     gap: 8,
+  },
+  checkboxTouchable: {
+    padding: 4,
+    marginTop: -2,
+    marginLeft: -4,
   },
   checkbox: {
     width: 16,

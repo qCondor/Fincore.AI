@@ -2,9 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useUser } from '../contexts/UserContext';
 
 export default function SplashScreen() {
   const router = useRouter();
+  const { userName, isLoading } = useUser();
 
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.8)).current;
@@ -45,14 +47,24 @@ export default function SplashScreen() {
         }),
       ]),
     ]).start();
+  }, []);
 
-    // Navigate after 2.5s to onboarding flow
+  // Navigate after animation completes AND user state is loaded
+  useEffect(() => {
+    if (isLoading) return;
+
     const timer = setTimeout(() => {
-      router.replace('/login');
-    }, 2500);
+      if (userName) {
+        // User is logged in, go to app
+        router.replace('/(tabs)/faith');
+      } else {
+        // No user, go to login
+        router.replace('/login');
+      }
+    }, 3000); // Wait 3s for full animation to be seen
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [isLoading, userName]);
 
   return (
     <View style={styles.container}>
@@ -72,7 +84,6 @@ export default function SplashScreen() {
         ]}
       >
         <Text style={styles.fincoreText}>FINCORE</Text>
-        <Text style={styles.aiText}>AI</Text>
       </Animated.View>
 
       <Animated.Text

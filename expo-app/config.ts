@@ -1,6 +1,6 @@
 // For local dev: use your Mac's IP (localhost doesn't work from simulator/device)
 // For TestFlight: set EXPO_PUBLIC_API_URL in eas.json or use ngrok URL
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.222:8000';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://35.178.139.5:8000';
 
 // OAuth Client IDs (public, not secrets)
 export const GOOGLE_CLIENT_ID = '336431541348-hbifi1ohb2hsomhqqe2i289nm6oehdpg.apps.googleusercontent.com';
