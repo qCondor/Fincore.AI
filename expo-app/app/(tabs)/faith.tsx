@@ -22,6 +22,7 @@ import type { ChatSession } from '../../hooks/useChatHistory';
 import { MenuIcon, PlusIcon } from '../../components/icons';
 import { WaveBackground } from '../../components/WaveBackground';
 import { BottomInputBar } from '../../components/BottomInputBar';
+import { AnimatedScreen } from '../../components/AnimatedScreen';
 
 interface Message {
   id: string;
@@ -220,7 +221,7 @@ export default function FaithScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <AnimatedScreen style={styles.container}>
       {/* Wave background */}
       <WaveBackground prefix="faith" />
 
@@ -393,14 +394,18 @@ export default function FaithScreen() {
           onChangeText={setInputText}
           onSend={handleSend}
           onMicPress={() => {
-            // Voice input coming soon
+            // Voice input coming soon, but the affordance is now visible.
           }}
-          showMic={false}
+          showMic={true}
           onNavigate={(screen) => {
             if (screen === 'profile') router.push('/profile');
             else if (screen === 'scan') router.push('/');
           }}
-          onComingSoon={(feature) => setComingSoonModal({ open: true, feature })}
+          onComingSoon={(feature) => {
+            if (feature === 'banking') router.push('/banking');
+            else if (feature === 'analytics') router.push('/analytics');
+            else setComingSoonModal({ open: true, feature });
+          }}
           bottomInset={insets.bottom}
         />
       </KeyboardAvoidingView>
@@ -426,7 +431,7 @@ export default function FaithScreen() {
         onNewChat={handleNewChat}
         source="faith"
       />
-    </View>
+    </AnimatedScreen>
   );
 }
 

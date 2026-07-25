@@ -6,7 +6,7 @@ import { useUser } from '../contexts/UserContext';
 
 export default function SplashScreen() {
   const router = useRouter();
-  const { userName, isLoading } = useUser();
+  const { userName, userEmail, authProvider, hasCompletedOnboarding, isLoading } = useUser();
 
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.8)).current;
@@ -14,35 +14,33 @@ export default function SplashScreen() {
   const taglineTranslate = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
-    // Logo fade in and scale
     Animated.sequence([
-      Animated.delay(500),
+      Animated.delay(250),
       Animated.parallel([
         Animated.timing(logoOpacity, {
           toValue: 1,
-          duration: 800,
+          duration: 450,
           useNativeDriver: true,
         }),
         Animated.timing(logoScale, {
           toValue: 1,
-          duration: 800,
+          duration: 450,
           useNativeDriver: true,
         }),
       ]),
     ]).start();
 
-    // Tagline fade in
     Animated.sequence([
-      Animated.delay(1500),
+      Animated.delay(700),
       Animated.parallel([
         Animated.timing(taglineOpacity, {
           toValue: 1,
-          duration: 600,
+          duration: 350,
           useNativeDriver: true,
         }),
         Animated.timing(taglineTranslate, {
           toValue: 0,
-          duration: 600,
+          duration: 350,
           useNativeDriver: true,
         }),
       ]),
@@ -53,18 +51,20 @@ export default function SplashScreen() {
   useEffect(() => {
     if (isLoading) return;
 
+    const hasStartedOnboarding = Boolean(userName || userEmail || authProvider !== 'anonymous');
+
     const timer = setTimeout(() => {
-      if (userName) {
-        // User is logged in, go to app
+      if (!hasStartedOnboarding) {
+        router.replace('/login');
+      } else if (hasCompletedOnboarding) {
         router.replace('/(tabs)/faith');
       } else {
-        // No user, go to login
-        router.replace('/login');
+        router.replace('/info');
       }
-    }, 3000); // Wait 3s for full animation to be seen
+    }, 700);
 
     return () => clearTimeout(timer);
-  }, [isLoading, userName]);
+  }, [isLoading, userName, userEmail, authProvider, hasCompletedOnboarding]);
 
   return (
     <View style={styles.container}>

@@ -9,6 +9,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useUser } from '../contexts/UserContext';
 
 const traitColors: Record<string, { from: string; to: string }> = {
   Openness: { from: '#005FCC', to: '#00C2FF' },
@@ -59,6 +60,7 @@ export default function ResultsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ scores?: string }>();
+  const { completeOnboarding } = useUser();
   const [expandedTrait, setExpandedTrait] = useState<string | null>(null);
 
   // Parse scores from params or use defaults
@@ -81,8 +83,9 @@ export default function ResultsScreen() {
     return defaultScores;
   }, [params.scores]);
 
-  const handleContinue = () => {
-    router.replace('/(tabs)');
+  const handleContinue = async () => {
+    await completeOnboarding();
+    router.replace('/(tabs)/faith');
   };
 
   return (
@@ -159,7 +162,7 @@ export default function ResultsScreen() {
 
         {/* Continue button */}
         <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
-          <Text style={styles.continueButtonText}>Continue to App</Text>
+          <Text style={styles.continueButtonText}>Continue to Faith</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>

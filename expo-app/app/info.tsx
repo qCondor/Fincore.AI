@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
+import { useUser } from '../contexts/UserContext';
 
 const validateEmail = (email: string): boolean => {
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -47,6 +48,7 @@ const validateDOB = (dob: string): boolean => {
 export default function InfoScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { setUserName, setUserEmail } = useUser();
   const [name, setName] = useState('');
   const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
@@ -68,7 +70,7 @@ export default function InfoScreen() {
     validateEmail(email) &&
     validatePhone(phone);
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!isFormValid) return;
 
     const newErrors: Record<string, string> = {};
@@ -92,7 +94,9 @@ export default function InfoScreen() {
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
-      router.push({ pathname: '/survey', params: { userName: name.trim() } });
+      await setUserName(name.trim());
+      await setUserEmail(email.trim());
+      router.replace({ pathname: '/survey', params: { userName: name.trim() } });
     }
   };
 

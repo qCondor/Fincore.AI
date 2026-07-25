@@ -31,6 +31,7 @@ import {
 import { WaveBackground } from '../../components/WaveBackground';
 import { BottomInputBar } from '../../components/BottomInputBar';
 import { MaskedAmount } from '../../components/MaskedText';
+import { AnimatedScreen } from '../../components/AnimatedScreen';
 
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
@@ -107,15 +108,15 @@ export default function ScanScreen() {
 
   if (!permission) {
     return (
-      <View style={styles.container}>
+      <AnimatedScreen style={styles.container}>
         <LinearGradient colors={['#56CCF2', '#2F80ED', '#005FCC']} style={StyleSheet.absoluteFill} />
-      </View>
+      </AnimatedScreen>
     );
   }
 
   if (!permission.granted) {
     return (
-      <View style={styles.container}>
+      <AnimatedScreen style={styles.container}>
         <LinearGradient colors={['#56CCF2', '#2F80ED', '#005FCC']} style={StyleSheet.absoluteFill} />
         <View style={styles.centered}>
           <Text style={styles.permissionText}>Camera access is needed to scan products</Text>
@@ -123,14 +124,14 @@ export default function ScanScreen() {
             <Text style={styles.permissionButtonText}>Grant Permission</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </AnimatedScreen>
     );
   }
 
   // Show scan result screen
   if (showResult && scan.analysisResult) {
     return (
-      <View style={styles.container}>
+      <AnimatedScreen style={styles.container}>
         <WaveBackground prefix="scan" />
 
         {/* Header */}
@@ -288,16 +289,17 @@ export default function ScanScreen() {
           featureKey="blueprint"
           description="See the full context behind your spending patterns and get a personalised action plan."
         />
-      </View>
+      </AnimatedScreen>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
-    >
+    <AnimatedScreen style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
       {/* Wave background */}
       <WaveBackground prefix="scan" />
 
@@ -403,7 +405,11 @@ export default function ScanScreen() {
           if (screen === 'profile') router.push('/profile');
           else if (screen === 'faith') router.push('/faith');
         }}
-        onComingSoon={(feature) => setComingSoonModal({ open: true, feature })}
+        onComingSoon={(feature) => {
+          if (feature === 'banking') router.push('/banking');
+          else if (feature === 'analytics') router.push('/analytics');
+          else setComingSoonModal({ open: true, feature });
+        }}
         bottomInset={insets.bottom}
         disabled={scan.isAnalysing}
       />
@@ -430,7 +436,8 @@ export default function ScanScreen() {
         onNewChat={() => setHistoryDrawerOpen(false)}
         source="scan"
       />
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </AnimatedScreen>
   );
 }
 

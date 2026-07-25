@@ -135,12 +135,12 @@ export default function LoginScreen() {
     googleDiscovery
   );
 
-  const handleAuthSuccess = (provider: 'google' | 'apple' | 'microsoft', name?: string, email?: string) => {
-    setAuthProvider(provider);
-    if (name) setUserName(name);
-    if (email) setUserEmail(email);
+  const handleAuthSuccess = async (provider: 'google' | 'apple' | 'microsoft', name?: string, email?: string) => {
+    await setAuthProvider(provider);
+    if (name) await setUserName(name);
+    if (email) await setUserEmail(email);
     setIsLoading(null);
-    router.push('/info');
+    router.replace('/info');
   };
 
   const handleGoogleAuth = async () => {
@@ -173,7 +173,7 @@ export default function LoginScreen() {
           });
           const profile = await profileResponse.json();
 
-          handleAuthSuccess(
+          await handleAuthSuccess(
             'google',
             profile.name,
             profile.email
@@ -222,7 +222,7 @@ export default function LoginScreen() {
           });
           const profile = await profileResponse.json();
 
-          handleAuthSuccess(
+          await handleAuthSuccess(
             'microsoft',
             profile.displayName || profile.givenName,
             profile.mail || profile.userPrincipalName
@@ -257,7 +257,7 @@ export default function LoginScreen() {
         ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
         : undefined;
 
-      handleAuthSuccess('apple', fullName || undefined, credential.email || undefined);
+      await handleAuthSuccess('apple', fullName || undefined, credential.email || undefined);
     } catch (e: any) {
       setIsLoading(null);
       if (e.code !== 'ERR_REQUEST_CANCELED') {

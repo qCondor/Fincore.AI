@@ -1,6 +1,8 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
+import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
+import { useUser } from '../../contexts/UserContext';
 
 function ScanIcon({ focused }: { focused: boolean }) {
   const color = focused ? '#2F80ED' : '#999';
@@ -55,6 +57,21 @@ function ProfileIcon({ focused }: { focused: boolean }) {
 }
 
 export default function TabsLayout() {
+  const router = useRouter();
+  const { userName, userEmail, authProvider, hasCompletedOnboarding, isLoading } = useUser();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const hasStartedOnboarding = Boolean(userName || userEmail || authProvider !== 'anonymous');
+
+    if (!hasStartedOnboarding) {
+      router.replace('/login');
+    } else if (!hasCompletedOnboarding) {
+      router.replace('/info');
+    }
+  }, [isLoading, userName, userEmail, authProvider, hasCompletedOnboarding, router]);
+
   return (
     <Tabs
       screenOptions={{

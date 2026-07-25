@@ -39,6 +39,7 @@ import {
 } from '../../components/icons';
 import { WaveBackground } from '../../components/WaveBackground';
 import { BottomInputBar } from '../../components/BottomInputBar';
+import { AnimatedScreen } from '../../components/AnimatedScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -184,7 +185,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ openSettings?: string }>();
-  const { userId } = useUser();
+  const { userId, authProvider } = useUser();
   const { initials, profile, refetch, deleteAccount } = useProfile({ userId: userId ?? undefined });
 
   const oceanTraits = React.useMemo(
@@ -239,6 +240,14 @@ export default function ProfileScreen() {
 
   const { clearUser } = useUser();
 
+  const authProviderLabel = authProvider === 'google'
+    ? 'Signed in with Google'
+    : authProvider === 'apple'
+    ? 'Signed in with Apple'
+    : authProvider === 'microsoft'
+    ? 'Signed in with Microsoft'
+    : 'Guest access';
+
   const askFaithAboutProfile = () => {
     if (!inputText.trim()) return;
     router.push({ pathname: '/faith', params: { profileQuestion: inputText.trim() } });
@@ -258,11 +267,12 @@ export default function ProfileScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
-    >
+    <AnimatedScreen style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
       {/* Wave background */}
       <WaveBackground prefix="profile" />
 
@@ -413,76 +423,57 @@ export default function ProfileScreen() {
           {/* Page 2 — Blueprint (locked) */}
           <View style={{ width: SCREEN_WIDTH, position: 'relative' }}>
             <ScrollView contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}>
-              {/* Spending Patterns */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Spending Patterns</Text>
-                <Text style={styles.cardText}>
-                  Your personality profile suggests you spend most on social activities and novelty-driven purchases.
+              <View style={styles.heroCard}>
+                <Text style={styles.heroHeadline}>Blueprint</Text>
+                <Text style={styles.heroSubtext}>
+                  Unlock your personalised spending blueprint and see the habits, triggers, and guidance tailored to your personality.
                 </Text>
               </View>
 
-              {/* Monthly Impact */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Monthly Impact</Text>
-                <View style={styles.impactItems}>
-                  {[
-                    { label: 'Weekly spend (impulse)', amount: '£42.60', pct: 65, color: '#FF9F0A' },
-                    { label: 'Monthly total', amount: '£183.20', pct: 78, color: '#FF3B30' },
-                    { label: 'Annual projection', amount: '£2,198.40', pct: 45, color: '#005FCC' },
-                  ].map((item) => (
-                    <View key={item.label} style={styles.impactItem}>
-                      <View style={styles.impactRow}>
-                        <Text style={styles.impactLabel}>{item.label}</Text>
-                        <Text style={styles.impactAmount}>{item.amount}</Text>
-                      </View>
-                      <View style={styles.impactBarBg}>
-                        <View style={[styles.impactBar, { width: `${item.pct}%`, backgroundColor: item.color }]} />
-                      </View>
-                    </View>
-                  ))}
-                </View>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>What you'll discover</Text>
+                {[
+                  'Why your spending trends happen and what they mean for you',
+                  'How your personality shapes impulse, planning, and risk tolerance',
+                  'A concrete action plan you can use today',
+                ].map((item) => (
+                  <View key={item} style={styles.highlightRow}>
+                    <View style={styles.highlightDot} />
+                    <Text style={styles.highlightText}>{item}</Text>
+                  </View>
+                ))}
               </View>
 
-              {/* Action Plan */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Your Action Plan</Text>
-                <View style={styles.actionItems}>
-                  {[
-                    { text: 'Set weekly spending caps', sub: 'Limit impulse spending to £25/week', color: '#34C759' },
-                    { text: 'Social spending alerts', sub: 'Get notified when social pressure drives purchases', color: '#005FCC' },
-                    { text: 'Novelty budget', sub: 'Channel curiosity into a dedicated exploration fund', color: '#FF9F0A' },
-                  ].map((item) => (
-                    <View key={item.text} style={styles.actionItem}>
-                      <View style={[styles.actionIcon, { backgroundColor: `${item.color}20` }]}>
-                        <CheckIcon color={item.color} />
-                      </View>
-                      <View style={styles.actionTextContainer}>
-                        <Text style={styles.actionTitle}>{item.text}</Text>
-                        <Text style={styles.actionSub}>{item.sub}</Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Why Blueprint matters</Text>
+                {[
+                  { title: 'Personal clarity', detail: 'See your spending through the lens of your own personality.' },
+                  { title: 'Better decisions', detail: 'Use insights that fit how you actually behave.' },
+                  { title: 'Smart support', detail: 'Get guidance that feels relevant, not generic.' },
+                ].map((item) => (
+                  <View key={item.title} style={styles.bulletRow}>
+                    <Text style={styles.bulletTitle}>{item.title}</Text>
+                    <Text style={styles.bulletText}>{item.detail}</Text>
+                  </View>
+                ))}
               </View>
 
-              <View style={{ height: 100 }} />
-            </ScrollView>
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Locked today</Text>
+                <Text style={styles.cardText}>
+                  Blueprint is still on the way, but you can join the waitlist now to get early access and first-look updates.
+                </Text>
+              </View>
 
-            {/* Blur overlay for locked content */}
-            <BlurView intensity={60} tint="light" style={styles.lockOverlay}>
-              <View style={styles.lockOverlayGradient} />
-              <LockIcon size={48} />
-              <Text style={styles.lockTitle}>Blueprint</Text>
-              <Text style={styles.lockText}>
-                See the full context behind your spending patterns and get a personalised action plan
-              </Text>
               <TouchableOpacity
-                style={styles.upgradeButton}
+                style={styles.ctaButton}
                 onPress={() => setComingSoonModal({ open: true, feature: 'blueprint' })}
               >
-                <Text style={styles.upgradeButtonText}>Join Waitlist</Text>
+                <Text style={styles.ctaText}>Join Blueprint Waitlist</Text>
               </TouchableOpacity>
-            </BlurView>
+
+              <View style={{ height: 120 }} />
+            </ScrollView>
           </View>
         </ScrollView>
       </View>
@@ -497,7 +488,11 @@ export default function ProfileScreen() {
           if (screen === 'faith') router.push('/faith');
           else if (screen === 'scan') router.push('/');
         }}
-        onComingSoon={(feature) => setComingSoonModal({ open: true, feature })}
+        onComingSoon={(feature) => {
+          if (feature === 'banking') router.push('/banking');
+          else if (feature === 'analytics') router.push('/analytics');
+          else setComingSoonModal({ open: true, feature });
+        }}
         bottomInset={insets.bottom}
         showMic={false}
       />
@@ -518,13 +513,14 @@ export default function ProfileScreen() {
 
       {/* Settings Menu Overlay */}
       {settingsMenuOpen && (
-        <Animated.View
-          style={[
-            styles.settingsOverlay,
-            { transform: [{ translateX: settingsSlide }] },
-          ]}
-        >
-          <View style={[styles.settingsMenu, { paddingTop: insets.top + 16 }]}>
+        <View style={styles.settingsOverlay}>
+          <TouchableOpacity style={styles.settingsBackdrop} activeOpacity={1} onPress={closeSettingsMenu} />
+          <View
+            style={[
+              styles.settingsMenu,
+              { paddingTop: insets.top + 16, transform: [{ translateX: settingsSlide }] },
+            ]}
+          >
             <View style={styles.settingsHeader}>
               <TouchableOpacity style={styles.settingsCloseButton} onPress={closeSettingsMenu}>
                 <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
@@ -545,7 +541,26 @@ export default function ProfileScreen() {
               )}
               <Text style={styles.settingsName}>{profile?.name || 'User'}</Text>
               <Text style={styles.settingsEmail}>{profile?.email || 'user@fincore.one'}</Text>
+              <View style={styles.providerBadge}>
+                <Text style={styles.providerBadgeText}>{authProviderLabel}</Text>
+              </View>
             </View>
+
+            <LinearGradient
+              colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.08)']}
+              style={styles.settingsSummaryCard}
+            >
+              <View style={styles.settingsSummaryHeader}>
+                <View style={styles.settingsSummaryPill}>
+                  <Text style={styles.settingsSummaryPillText}>Synced</Text>
+                </View>
+                <Text style={styles.settingsSummaryCaption}>Coach ready</Text>
+              </View>
+              <Text style={styles.settingsSummaryTitle}>Your profile is set up</Text>
+              <Text style={styles.settingsSummaryText}>
+                Fincore is using your latest personality profile to shape helpful guidance and better nudges.
+              </Text>
+            </LinearGradient>
 
             <View style={styles.settingsMenuItems}>
               <SettingsMenuItem
@@ -582,7 +597,7 @@ export default function ProfileScreen() {
               />
             </View>
           </View>
-        </Animated.View>
+        </View>
       )}
 
       {/* Settings Pages */}
@@ -623,7 +638,8 @@ export default function ProfileScreen() {
           }}
         />
       </Modal>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </AnimatedScreen>
   );
 }
 
@@ -730,6 +746,85 @@ const styles = StyleSheet.create({
   pageContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
+  },
+  heroCard: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 28,
+    padding: 24,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  heroHeadline: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  heroSubtext: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: 'rgba(255,255,255,0.9)',
+  },
+  section: {
+    marginBottom: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  highlightRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 12,
+  },
+  highlightDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#00E0FF',
+    marginTop: 6,
+  },
+  highlightText: {
+    flex: 1,
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  bulletRow: {
+    marginBottom: 14,
+  },
+  bulletTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 6,
+  },
+  bulletText: {
+    color: 'rgba(255,255,255,0.78)',
+    lineHeight: 20,
+  },
+  ctaButton: {
+    marginTop: 10,
+    height: 52,
+    borderRadius: 28,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 40,
+  },
+  ctaText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#005FCC',
   },
   card: {
     backgroundColor: 'rgba(255,255,255,0.95)',
@@ -932,42 +1027,55 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.18)',
   },
   lockOverlayGradient: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: 'rgba(0,95,204,0.18)',
+  },
+  lockCard: {
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    padding: 28,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   lockTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1a1a1a',
-    marginTop: 12,
-    marginBottom: 4,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#fff',
+    marginTop: 16,
+    marginBottom: 10,
   },
   lockText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.92)',
     textAlign: 'center',
-    marginBottom: 20,
-    maxWidth: 260,
+    marginBottom: 24,
+    maxWidth: 300,
+    lineHeight: 22,
   },
   upgradeButton: {
-    height: 50,
+    height: 52,
     paddingHorizontal: 32,
-    backgroundColor: '#005FCC',
-    borderRadius: 32,
+    backgroundColor: '#fff',
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: 'rgba(0,95,204,0.3)',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
+    shadowColor: 'rgba(0,0,0,0.18)',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
     shadowRadius: 16,
+    elevation: 6,
   },
   upgradeButtonText: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: '700',
+    color: '#005FCC',
   },
   settingsOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -977,6 +1085,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#005FCC',
     paddingHorizontal: 20,
+    width: '100%',
+  },
+  settingsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.32)',
   },
   settingsHeader: {
     flexDirection: 'row',
@@ -1000,7 +1113,46 @@ const styles = StyleSheet.create({
   },
   settingsAvatarSection: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 20,
+  },
+  settingsSummaryCard: {
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  settingsSummaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  settingsSummaryPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(52,199,89,0.18)',
+  },
+  settingsSummaryPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B7F6C4',
+  },
+  settingsSummaryCaption: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.72)',
+  },
+  settingsSummaryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  settingsSummaryText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.74)',
+    lineHeight: 18,
   },
   settingsAvatar: {
     width: 80,
@@ -1034,6 +1186,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.6)',
     marginTop: 4,
+  },
+  providerBadge: {
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  providerBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
   },
   settingsMenuItems: {
     backgroundColor: 'rgba(255,255,255,0.08)',

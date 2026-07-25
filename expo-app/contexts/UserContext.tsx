@@ -6,6 +6,7 @@ const USER_ID_KEY = 'fincore_user_id';
 const USER_NAME_KEY = 'fincore_user_name';
 const AUTH_PROVIDER_KEY = 'fincore_auth_provider';
 const USER_EMAIL_KEY = 'fincore_user_email';
+const ONBOARDING_COMPLETED_KEY = 'fincore_onboarding_completed';
 
 type AuthProvider = 'anonymous' | 'google' | 'apple' | 'microsoft';
 
@@ -14,10 +15,12 @@ interface UserContextValue {
   userName: string | null;
   userEmail: string | null;
   authProvider: AuthProvider;
+  hasCompletedOnboarding: boolean;
   isLoading: boolean;
   setUserName: (name: string) => Promise<void>;
   setUserEmail: (email: string) => Promise<void>;
   setAuthProvider: (provider: AuthProvider) => Promise<void>;
+  completeOnboarding: () => Promise<void>;
   clearUser: () => Promise<void>;
 }
 
@@ -32,6 +35,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [userName, setUserNameState] = useState<string | null>(null);
   const [userEmail, setUserEmailState] = useState<string | null>(null);
   const [authProvider, setAuthProviderState] = useState<AuthProvider>('anonymous');
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -41,6 +45,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         let storedUserName = await SecureStore.getItemAsync(USER_NAME_KEY);
         let storedEmail = await SecureStore.getItemAsync(USER_EMAIL_KEY);
         const storedProvider = await SecureStore.getItemAsync(AUTH_PROVIDER_KEY);
+        const storedOnboarding = await SecureStore.getItemAsync(ONBOARDING_COMPLETED_KEY);
 
         if (!storedUserId) {
           storedUserId = generateUserId();
@@ -50,6 +55,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setUserId(storedUserId);
         setUserNameState(storedUserName);
         setUserEmailState(storedEmail);
+        setHasCompletedOnboarding(storedOnboarding === 'true');
         if (storedProvider) {
           setAuthProviderState(storedProvider as AuthProvider);
         }
@@ -92,16 +98,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const completeOnboarding = async () => {
+    try {
+      await SecureStore.setItemAsync(ONBOARDING_COMPLETED_KEY, 'true');
+      setHasCompletedOnboarding(true);
+    } catch (error) {
+      console.error('Failed to save onboarding state:', error);
+    }
+  };
+
   const clearUser = async () => {
     try {
       const newUserId = generateUserId();
       await SecureStore.setItemAsync(USER_ID_KEY, newUserId);
       await SecureStore.deleteItemAsync(USER_NAME_KEY);
       await SecureStore.deleteItemAsync(USER_EMAIL_KEY);
+      await SecureStore.deleteItemAsync(ONBOARDING_COMPLETED_KEY);
       await SecureStore.setItemAsync(AUTH_PROVIDER_KEY, 'anonymous');
       setUserId(newUserId);
       setUserNameState(null);
       setUserEmailState(null);
+      setHasCompletedOnboarding(false);
       setAuthProviderState('anonymous');
     } catch (error) {
       console.error('Failed to clear user:', error);
@@ -114,10 +131,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       userName,
       userEmail,
       authProvider,
+      hasCompletedOnboarding,
       isLoading,
       setUserName,
       setUserEmail,
       setAuthProvider,
+      completeOnboarding,
       clearUser,
     }}>
       {children}

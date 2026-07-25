@@ -49,6 +49,13 @@ function BellIcon() {
   );
 }
 
+const featureHighlights: Record<string, string[]> = {
+  banking: ['Live transaction summaries', 'Spending categories by personality', 'Helpful nudges before overspending'],
+  analytics: ['Trend spotting across your month', 'Tailored money insights', 'Clear next-step recommendations'],
+  blueprint: ['A personalised financial action plan', 'Milestones that match your habits', 'Guidance for long-term goals'],
+  premium: ['Priority feature access', 'Exclusive coaching insights', 'Early beta perks'],
+};
+
 export function ComingSoonModal({
   visible,
   onClose,
@@ -88,7 +95,7 @@ export function ComingSoonModal({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={handleClose}
     >
       <TouchableWithoutFeedback onPress={handleClose}>
@@ -109,23 +116,40 @@ export function ComingSoonModal({
             <View style={styles.modalCardInner}>
               <View style={styles.decorativeOrb} />
 
-            <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-              <XIcon />
-            </TouchableOpacity>
+              <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+                <XIcon />
+              </TouchableOpacity>
 
-            <View style={styles.iconContainer}>
-              <LinearGradient
-                colors={['rgba(0,95,204,0.2)', 'rgba(0,194,255,0.2)']}
-                style={styles.iconGradient}
-              >
-                <SparklesIcon />
-              </LinearGradient>
-            </View>
+              <View style={styles.heroHeader}>
+                <View style={styles.iconContainer}>
+                  <LinearGradient
+                    colors={['rgba(0,95,204,0.2)', 'rgba(0,194,255,0.2)']}
+                    style={styles.iconGradient}
+                  >
+                    <SparklesIcon />
+                  </LinearGradient>
+                </View>
 
-            <Text style={styles.title}>{feature}</Text>
-            <Text style={styles.description}>{description}</Text>
+                <View style={styles.pillContainer}>
+                  <View style={styles.pill}>
+                    <Text style={styles.pillText}>Early access · Beta soon</Text>
+                  </View>
+                </View>
+              </View>
 
-            {submitted ? (
+              <Text style={styles.title}>{feature}</Text>
+              <Text style={styles.description}>{description}</Text>
+
+              <View style={styles.highlightsContainer}>
+                {featureHighlights[featureKey]?.map((item) => (
+                  <View key={item} style={styles.highlightRow}>
+                    <View style={styles.highlightDot} />
+                    <Text style={styles.highlightText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {submitted ? (
               <View style={styles.successContainer}>
                 <View style={styles.successIcon}>
                   <BellIcon />
@@ -140,7 +164,7 @@ export function ComingSoonModal({
                   value={email}
                   onChangeText={setEmail}
                   placeholder="Enter your email"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  placeholderTextColor="rgba(15, 42, 74, 0.45)"
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -179,7 +203,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(4, 24, 51, 0.72)',
   },
   centeredView: {
     flex: 1,
@@ -189,8 +213,9 @@ const styles = StyleSheet.create({
   },
   modalCardOuter: {
     width: '100%',
-    maxWidth: 340,
-    borderRadius: 28,
+    maxWidth: 420,
+    maxHeight: '86%',
+    borderRadius: 32,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
@@ -200,7 +225,8 @@ const styles = StyleSheet.create({
   },
   modalCardInner: {
     padding: 24,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 28,
+    backgroundColor: 'rgba(248, 251, 255, 0.98)',
   },
   decorativeOrb: {
     position: 'absolute',
@@ -223,9 +249,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 10,
   },
+  heroHeader: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   iconContainer: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   iconGradient: {
     width: 64,
@@ -238,17 +268,54 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 22,
+    color: '#0F2A4A',
     fontWeight: '700',
-    color: '#fff',
     textAlign: 'center',
     marginBottom: 8,
   },
   description: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
+    color: '#4F627A',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 12,
     lineHeight: 20,
+  },
+  pillContainer: {
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  pill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0, 95, 204, 0.08)',
+  },
+  pillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#005FCC',
+  },
+  highlightsContainer: {
+    marginBottom: 20,
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  highlightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  highlightDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#00C2FF',
+  },
+  highlightText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#34506F',
+    lineHeight: 18,
   },
   formContainer: {
     gap: 12,
@@ -257,10 +324,10 @@ const styles = StyleSheet.create({
     height: 48,
     paddingHorizontal: 16,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0, 95, 204, 0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    color: '#fff',
+    borderColor: 'rgba(0, 95, 204, 0.16)',
+    color: '#0F2A4A',
     fontSize: 15,
   },
   submitButton: {
@@ -297,16 +364,16 @@ const styles = StyleSheet.create({
   successTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#fff',
+    color: '#0F2A4A',
   },
   successSubtitle: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
+    color: '#4F627A',
     marginTop: 4,
   },
   comingDate: {
     fontSize: 11,
-    color: 'rgba(255,255,255,0.3)',
+    color: 'rgba(15, 42, 74, 0.45)',
     textAlign: 'center',
     marginTop: 16,
   },
