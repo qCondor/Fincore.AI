@@ -32,6 +32,7 @@ interface BottomInputBarProps {
   onChangeText: (text: string) => void;
   onSend: () => void;
   onMicPress?: () => void;
+  onPlusPress?: () => void;
   onNavigate: (screen: 'profile' | 'faith' | 'scan') => void;
   onComingSoon: (feature: 'banking' | 'analytics') => void;
   bottomInset: number;
@@ -46,6 +47,7 @@ export function BottomInputBar({
   onChangeText,
   onSend,
   onMicPress,
+  onPlusPress,
   onNavigate,
   onComingSoon,
   bottomInset,
@@ -162,7 +164,10 @@ export function BottomInputBar({
           )}
           <View style={styles.inputBar}>
             {inputFocused && (
-              <TouchableOpacity style={styles.plusButton} onPress={() => setInputFocused(false)}>
+              <TouchableOpacity
+                style={styles.plusButton}
+                onPress={onPlusPress ?? (() => setInputFocused(false))}
+              >
                 <PlusIcon />
               </TouchableOpacity>
             )}

@@ -14,22 +14,98 @@ import Svg, { Path } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const questions = [
-  { id: 1, text: "A friend invites you on a spontaneous weekend trip abroad.", hint: "How do you respond?", options: ["Book it immediately — life's too short!", "Check your budget first, then decide", "Politely decline — you prefer planned holidays", "Hard no — spontaneous spending stresses you out"] },
-  { id: 2, text: "Your favourite brand drops a new limited-edition product.", hint: "What's your move?", options: ["Buy it straight away before it sells out", "Add it to your wishlist and sleep on it", "Wait for reviews and maybe a sale", "Ignore it — you stick with what you know"] },
-  { id: 3, text: "A colleague suggests investing in crypto.", hint: "How do you react?", options: ["Exciting! You research it that evening", "Interesting — you'd consider a small amount", "Too risky — you prefer traditional savings", "No chance — you avoid anything speculative"] },
-  { id: 4, text: "It's payday. What happens first?", hint: "Be honest!", options: ["Treat yourself — you've earned it", "Move savings first, then spend freely", "Check your bills, then allocate the rest", "Nothing changes — you budget monthly anyway"] },
-  { id: 5, text: "You notice an unused subscription on your bank statement.", hint: "What do you do?", options: ["Ignore it — it's only a few quid", "Cancel it immediately", "Keep meaning to cancel, but forget", "Keep it 'just in case'"] },
-  { id: 6, text: "You want to save for a holiday in three months.", hint: "How do you approach it?", options: ["Set up automatic transfers right now", "Try to save, but dip into it sometimes", "Plan to save, but rarely follow through", "Wing it — you'll figure it out closer to the time"] },
-  { id: 7, text: "Your group chat lights up with Friday night plans.", hint: "What's your typical response?", options: ["You're in — already suggesting venues", "Sounds fun, but you check your budget first", "You'd rather a quiet night with close friends", "Pass — you prefer staying in"] },
-  { id: 8, text: "Do you spend more when shopping alone or with friends?", hint: "Think about your recent purchases.", options: ["Way more with friends — it's part of the fun", "Slightly less alone — no peer pressure", "About the same either way", "Much less alone — friends encourage impulse buys"] },
-  { id: 9, text: "You get a surprise pay rise.", hint: "Who finds out?", options: ["Everyone — you celebrate loudly", "Close friends and family", "Just your partner or best mate", "No one — money is private"] },
-  { id: 10, text: "A flatmate asks to borrow money until payday.", hint: "What do you do?", options: ["Of course — you'd do anything to help", "Yes, but you set a clear repayment date", "Maybe a small amount, reluctantly", "No — lending money ruins friendships"] },
-  { id: 11, text: "At a group dinner, someone orders way more than you.", hint: "The bill arrives to split evenly.", options: ["Pay your share to avoid awkwardness", "Suggest splitting, but back down if pushed", "Offer to split by what each person ordered", "Insist on paying only for what you had"] },
-  { id: 12, text: "A charity worker approaches you on the street.", hint: "How do you typically respond?", options: ["Sign up — it's hard to say no to a good cause", "Politely listen, then decide", "Keep walking — you give in your own time", "Firmly decline — you dislike pressure tactics"] },
-  { id: 13, text: "You check your bank balance and it's lower than expected.", hint: "How do you feel?", options: ["Panicked — where did it all go?", "Worried — you need to review your spending", "Mildly concerned, but you'll sort it", "Unfazed — these things happen"] },
-  { id: 14, text: "After an impulse purchase, how long does the guilt last?", hint: "Be honest with yourself.", options: ["Days — you replay the decision constantly", "A few hours of second-guessing", "A brief pang, then you move on", "No guilt — you trust your choices"] },
-  { id: 15, text: "How often do you compare your finances to friends or colleagues?", hint: "Social media counts too.", options: ["Constantly — it affects your mood", "Occasionally, and it stresses you out", "Sometimes, but it doesn't bother you much", "Rarely — you focus on your own journey"] },
+interface Question {
+  itemId: number;
+  domain: string;
+  facet: string;
+  reverse: boolean;
+  text: string;
+}
+
+const questions: Question[] = [
+  // Extraversion — Sociability
+  { itemId: 1,  domain: 'extraversion', facet: 'sociability',         reverse: false, text: 'Is outgoing, sociable.' },
+  { itemId: 46, domain: 'extraversion', facet: 'sociability',         reverse: false, text: 'Is talkative.' },
+  { itemId: 16, domain: 'extraversion', facet: 'sociability',         reverse: true,  text: 'Tends to be quiet.' },
+  { itemId: 31, domain: 'extraversion', facet: 'sociability',         reverse: true,  text: 'Is sometimes shy, introverted.' },
+  // Extraversion — Assertiveness
+  { itemId: 6,  domain: 'extraversion', facet: 'assertiveness',       reverse: false, text: 'Has an assertive personality.' },
+  { itemId: 21, domain: 'extraversion', facet: 'assertiveness',       reverse: false, text: 'Is dominant, acts as a leader.' },
+  { itemId: 36, domain: 'extraversion', facet: 'assertiveness',       reverse: true,  text: 'Finds it hard to influence people.' },
+  { itemId: 51, domain: 'extraversion', facet: 'assertiveness',       reverse: true,  text: 'Prefers to have others take charge.' },
+  // Extraversion — Energy Level
+  { itemId: 41, domain: 'extraversion', facet: 'energyLevel',         reverse: false, text: 'Is full of energy.' },
+  { itemId: 56, domain: 'extraversion', facet: 'energyLevel',         reverse: false, text: 'Shows a lot of enthusiasm.' },
+  { itemId: 11, domain: 'extraversion', facet: 'energyLevel',         reverse: true,  text: 'Rarely feels excited or eager.' },
+  { itemId: 26, domain: 'extraversion', facet: 'energyLevel',         reverse: true,  text: 'Is less active than other people.' },
+  // Agreeableness — Compassion
+  { itemId: 2,  domain: 'agreeableness', facet: 'compassion',         reverse: false, text: 'Is compassionate, has a soft heart.' },
+  { itemId: 32, domain: 'agreeableness', facet: 'compassion',         reverse: false, text: 'Is helpful and unselfish with others.' },
+  { itemId: 17, domain: 'agreeableness', facet: 'compassion',         reverse: true,  text: 'Feels little sympathy for others.' },
+  { itemId: 47, domain: 'agreeableness', facet: 'compassion',         reverse: true,  text: 'Can be cold and uncaring.' },
+  // Agreeableness — Respectfulness
+  { itemId: 7,  domain: 'agreeableness', facet: 'respectfulness',     reverse: false, text: 'Is respectful, treats others with respect.' },
+  { itemId: 52, domain: 'agreeableness', facet: 'respectfulness',     reverse: false, text: 'Is polite, courteous to others.' },
+  { itemId: 22, domain: 'agreeableness', facet: 'respectfulness',     reverse: true,  text: 'Starts arguments with others.' },
+  { itemId: 37, domain: 'agreeableness', facet: 'respectfulness',     reverse: true,  text: 'Is sometimes rude to others.' },
+  // Agreeableness — Trust
+  { itemId: 27, domain: 'agreeableness', facet: 'trust',              reverse: false, text: 'Has a forgiving nature.' },
+  { itemId: 57, domain: 'agreeableness', facet: 'trust',              reverse: false, text: 'Assumes the best about people.' },
+  { itemId: 12, domain: 'agreeableness', facet: 'trust',              reverse: true,  text: 'Tends to find fault with others.' },
+  { itemId: 42, domain: 'agreeableness', facet: 'trust',              reverse: true,  text: "Is suspicious of others' intentions." },
+  // Conscientiousness — Organization
+  { itemId: 18, domain: 'conscientiousness', facet: 'organization',   reverse: false, text: 'Is systematic, likes to keep things in order.' },
+  { itemId: 33, domain: 'conscientiousness', facet: 'organization',   reverse: false, text: 'Keeps things neat and tidy.' },
+  { itemId: 3,  domain: 'conscientiousness', facet: 'organization',   reverse: true,  text: 'Tends to be disorganized.' },
+  { itemId: 48, domain: 'conscientiousness', facet: 'organization',   reverse: true,  text: "Leaves a mess, doesn't clean up." },
+  // Conscientiousness — Productiveness
+  { itemId: 38, domain: 'conscientiousness', facet: 'productiveness', reverse: false, text: 'Is efficient, gets things done.' },
+  { itemId: 53, domain: 'conscientiousness', facet: 'productiveness', reverse: false, text: 'Is persistent, works until the task is finished.' },
+  { itemId: 8,  domain: 'conscientiousness', facet: 'productiveness', reverse: true,  text: 'Tends to be lazy.' },
+  { itemId: 23, domain: 'conscientiousness', facet: 'productiveness', reverse: true,  text: 'Has difficulty getting started on tasks.' },
+  // Conscientiousness — Responsibility
+  { itemId: 13, domain: 'conscientiousness', facet: 'responsibility', reverse: false, text: 'Is dependable, steady.' },
+  { itemId: 43, domain: 'conscientiousness', facet: 'responsibility', reverse: false, text: 'Is reliable, can always be counted on.' },
+  { itemId: 28, domain: 'conscientiousness', facet: 'responsibility', reverse: true,  text: 'Can be somewhat careless.' },
+  { itemId: 58, domain: 'conscientiousness', facet: 'responsibility', reverse: true,  text: 'Sometimes behaves irresponsibly.' },
+  // Negative Emotionality — Anxiety
+  { itemId: 19, domain: 'negativeEmotionality', facet: 'anxiety',              reverse: false, text: 'Can be tense.' },
+  { itemId: 34, domain: 'negativeEmotionality', facet: 'anxiety',              reverse: false, text: 'Worries a lot.' },
+  { itemId: 4,  domain: 'negativeEmotionality', facet: 'anxiety',              reverse: true,  text: 'Is relaxed, handles stress well.' },
+  { itemId: 49, domain: 'negativeEmotionality', facet: 'anxiety',              reverse: true,  text: 'Rarely feels anxious or afraid.' },
+  // Negative Emotionality — Depression
+  { itemId: 39, domain: 'negativeEmotionality', facet: 'depression',           reverse: false, text: 'Often feels sad.' },
+  { itemId: 54, domain: 'negativeEmotionality', facet: 'depression',           reverse: false, text: 'Tends to feel depressed, blue.' },
+  { itemId: 9,  domain: 'negativeEmotionality', facet: 'depression',           reverse: true,  text: 'Stays optimistic after experiencing a setback.' },
+  { itemId: 24, domain: 'negativeEmotionality', facet: 'depression',           reverse: true,  text: 'Feels secure, comfortable with self.' },
+  // Negative Emotionality — Emotional Volatility
+  { itemId: 14, domain: 'negativeEmotionality', facet: 'emotionalVolatility',  reverse: false, text: 'Is moody, has up and down mood swings.' },
+  { itemId: 59, domain: 'negativeEmotionality', facet: 'emotionalVolatility',  reverse: false, text: 'Is temperamental, gets emotional easily.' },
+  { itemId: 29, domain: 'negativeEmotionality', facet: 'emotionalVolatility',  reverse: true,  text: 'Is emotionally stable, not easily upset.' },
+  { itemId: 44, domain: 'negativeEmotionality', facet: 'emotionalVolatility',  reverse: true,  text: 'Keeps their emotions under control.' },
+  // Open-Mindedness — Intellectual Curiosity
+  { itemId: 10, domain: 'openMindedness', facet: 'intellectualCuriosity', reverse: false, text: 'Is curious about many different things.' },
+  { itemId: 40, domain: 'openMindedness', facet: 'intellectualCuriosity', reverse: false, text: 'Is complex, a deep thinker.' },
+  { itemId: 25, domain: 'openMindedness', facet: 'intellectualCuriosity', reverse: true,  text: 'Avoids intellectual, philosophical discussions.' },
+  { itemId: 55, domain: 'openMindedness', facet: 'intellectualCuriosity', reverse: true,  text: 'Has little interest in abstract ideas.' },
+  // Open-Mindedness — Aesthetic Sensitivity
+  { itemId: 20, domain: 'openMindedness', facet: 'aestheticSensitivity', reverse: false, text: 'Is fascinated by art, music, or literature.' },
+  { itemId: 35, domain: 'openMindedness', facet: 'aestheticSensitivity', reverse: false, text: 'Values art and beauty.' },
+  { itemId: 5,  domain: 'openMindedness', facet: 'aestheticSensitivity', reverse: true,  text: 'Has few artistic interests.' },
+  { itemId: 50, domain: 'openMindedness', facet: 'aestheticSensitivity', reverse: true,  text: 'Thinks poetry and plays are boring.' },
+  // Open-Mindedness — Creative Imagination
+  { itemId: 15, domain: 'openMindedness', facet: 'creativeImagination', reverse: false, text: 'Is inventive, finds clever ways to do things.' },
+  { itemId: 60, domain: 'openMindedness', facet: 'creativeImagination', reverse: false, text: 'Is original, comes up with new ideas.' },
+  { itemId: 30, domain: 'openMindedness', facet: 'creativeImagination', reverse: true,  text: 'Has little creativity.' },
+  { itemId: 45, domain: 'openMindedness', facet: 'creativeImagination', reverse: true,  text: 'Has difficulty imagining things.' },
+];
+
+const LIKERT_OPTIONS = [
+  { label: 'Strongly Disagree', value: 1 },
+  { label: 'Disagree',          value: 2 },
+  { label: 'Neutral',           value: 3 },
+  { label: 'Agree',             value: 4 },
+  { label: 'Strongly Agree',    value: 5 },
 ];
 
 export default function SurveyScreen() {
@@ -41,47 +117,43 @@ export default function SurveyScreen() {
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const question = questions[currentQuestion];
-  const progress = (currentQuestion + 1) / questions.length;
+  const progress = currentQuestion / questions.length;
 
-  const handleAnswer = (optionIndex: number) => {
-    setAnswers({ ...answers, [question.id]: optionIndex });
+  const handleAnswer = (value: number) => {
+    const newAnswers = { ...answers, [currentQuestion]: value };
+    setAnswers(newAnswers);
 
     if (currentQuestion < questions.length - 1) {
-      // Animate to next question
-      Animated.sequence([
-        Animated.timing(slideAnim, {
-          toValue: -SCREEN_WIDTH,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: SCREEN_WIDTH,
-          duration: 0,
-          useNativeDriver: true,
-        }),
+      Animated.timing(slideAnim, {
+        toValue: -SCREEN_WIDTH,
+        duration: 200,
+        useNativeDriver: true,
+      }).start(() => {
+        slideAnim.setValue(SCREEN_WIDTH);
+        setCurrentQuestion(q => q + 1);
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 200,
           useNativeDriver: true,
-        }),
-      ]).start();
-
-      setTimeout(() => {
-        setCurrentQuestion(currentQuestion + 1);
-      }, 200);
-    } else {
-      // All questions answered - convert to letter format and go to processing
-      const answerLetters = questions.map((q) => {
-        const idx = answers[q.id] ?? 0;
-        return ['A', 'B', 'C', 'D'][idx];
+        }).start();
       });
-      // Include the current answer
-      answerLetters[question.id - 1] = ['A', 'B', 'C', 'D'][optionIndex];
-      router.push({ pathname: '/processing', params: { answers: JSON.stringify(answerLetters), userName: params.userName } });
+    } else {
+      const payload = questions.map((q, idx) => ({
+        itemId: q.itemId,
+        facet: q.facet,
+        domain: q.domain,
+        reverse: q.reverse,
+        rating: newAnswers[idx] ?? 3,
+      }));
+      router.push({
+        pathname: '/processing',
+        params: { answers: JSON.stringify(payload), userName: params.userName },
+      });
     }
   };
 
   const handleBack = () => {
+    slideAnim.stopAnimation();
     if (currentQuestion > 0) {
       setCurrentQuestion(currentQuestion - 1);
     } else {
@@ -97,20 +169,11 @@ export default function SurveyScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Progress bars */}
+      {/* Single continuous progress bar */}
       <View style={[styles.progressContainer, { top: insets.top + 54 }]}>
-        {questions.map((_, idx) => (
-          <View key={idx} style={styles.progressTrack}>
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  width: idx < currentQuestion ? '100%' : idx === currentQuestion ? '50%' : '0%',
-                },
-              ]}
-            />
-          </View>
-        ))}
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        </View>
       </View>
 
       {/* Content */}
@@ -129,22 +192,22 @@ export default function SurveyScreen() {
         </TouchableOpacity>
 
         <Animated.View style={[styles.questionContainer, { transform: [{ translateX: slideAnim }] }]}>
-          <Text style={styles.questionNumber}>{question.id} of 15</Text>
+          <Text style={styles.questionNumber}>{currentQuestion + 1} of {questions.length}</Text>
           <Text style={styles.questionText}>{question.text}</Text>
-          <Text style={styles.questionHint}>{question.hint}</Text>
+          <Text style={styles.questionHint}>Rate how accurately this describes you.</Text>
 
-          {/* Answer options */}
+          {/* Likert scale options */}
           <View style={styles.optionsContainer}>
-            {question.options.map((option, idx) => {
-              const isSelected = answers[question.id] === idx;
+            {LIKERT_OPTIONS.map((option) => {
+              const isSelected = answers[currentQuestion] === option.value;
               return (
                 <TouchableOpacity
-                  key={idx}
+                  key={option.value}
                   style={[styles.optionButton, isSelected && styles.optionButtonSelected]}
-                  onPress={() => handleAnswer(idx)}
+                  onPress={() => handleAnswer(option.value)}
                 >
                   <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
-                    {option}
+                    {option.label}
                   </Text>
                 </TouchableOpacity>
               );
@@ -164,12 +227,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
     right: 16,
-    flexDirection: 'row',
-    gap: 4,
     zIndex: 10,
   },
   progressTrack: {
-    flex: 1,
     height: 3,
     borderRadius: 1.5,
     backgroundColor: 'rgba(255,255,255,0.25)',
@@ -220,7 +280,7 @@ const styles = StyleSheet.create({
   optionButton: {
     backgroundColor: 'rgba(255,255,255,0.9)',
     borderRadius: 16,
-    paddingVertical: 16,
+    paddingVertical: 14,
     paddingHorizontal: 20,
     borderWidth: 2,
     borderColor: 'transparent',

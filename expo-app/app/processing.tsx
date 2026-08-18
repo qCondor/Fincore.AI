@@ -52,14 +52,16 @@ export default function ProcessingScreen() {
 
       try {
         if (params.answers) {
-          const answerLetters = JSON.parse(params.answers) as string[];
+          const answers = JSON.parse(params.answers) as Array<{
+            itemId: number; facet: string; domain: string; reverse: boolean; rating: number;
+          }>;
           const response = await fetch(`${API_BASE_URL}/score`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               user_id: userId,
               name: params.userName || userName || 'User',
-              answers: answerLetters,
+              answers,
             }),
           });
 

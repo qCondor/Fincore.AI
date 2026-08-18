@@ -357,6 +357,8 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:8081",
     "https://fincore.one",
     "https://api.fincore.one",
+    "https://maximum-uptown-boxing.ngrok-free.dev",
+    "exp://localhost:8081",
 ]
 
 app.add_middleware(
@@ -401,16 +403,24 @@ def health_check():
     return {"status": "ok"}
 
 
+class SurveyAnswerItem(BaseModel):
+    itemId: int
+    facet: str
+    domain: str
+    reverse: bool
+    rating: int
+
+
 class SurveyRequest(BaseModel):
     user_id: str
     name: str | None = None
-    answers: list[str]  # 15 letters, e.g. ["A", "C", "B", ...]
+    answers: list[SurveyAnswerItem]
 
 
 @app.post("/score")
 def submit_survey(req: SurveyRequest):
     try:
-        big_five = score_survey(req.answers)
+        big_five = score_survey([a.model_dump() for a in req.answers])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     profile = {"user_id": req.user_id, "name": req.name, "big_five": big_five}

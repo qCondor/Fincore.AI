@@ -64,6 +64,11 @@ interface AnalyzeResponse {
   error?: string;
 }
 
+interface PriceCheckResponse {
+  success: boolean;
+  cheapest_price?: number;
+}
+
 async function compressImage(uri: string): Promise<{ base64: string; uri: string }> {
   const result = await ImageManipulator.manipulateAsync(
     uri,
@@ -106,6 +111,17 @@ export function useScan({ userId }: UseScanOptions = {}): UseScanReturn {
         }
 
         const result = { ...data.analysis!, scan_id: data.scan_id };
+
+        if (result.product_barcode) {
+          const { data: priceData } = await apiPost<PriceCheckResponse>('/price-check', {
+            barcode: result.product_barcode,
+            user_id: userId,
+          });
+          if (priceData?.success && priceData.cheapest_price != null) {
+            result.estimated_price = priceData.cheapest_price;
+          }
+        }
+
         setAnalysisResult(result);
 
         if (data.scan_id && userId) {

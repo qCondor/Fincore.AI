@@ -13,9 +13,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Line } from 'react-native-svg';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { ComingSoonModal } from '../../components/ComingSoonModal';
 import { HistoryDrawer } from '../../components/HistoryDrawer';
 import { useChat } from '../../hooks/useChat';
+import { API_BASE_URL } from '../../config';
 import { useProfile } from '../../hooks/useProfile';
 import { useUser } from '../../contexts/UserContext';
 import type { ChatSession } from '../../hooks/useChatHistory';
@@ -147,7 +150,7 @@ export default function FaithScreen() {
   // Use dynamic suggestions if available, otherwise defaults
   const quickReplies = dynamicSuggestions.length > 0 ? dynamicSuggestions : [];
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
-  const [comingSoonModal, setComingSoonModal] = useState<{ open: boolean; feature: 'banking' | 'analytics' | 'blueprint' | null }>({ open: false, feature: null });
+  const [comingSoonModal, setComingSoonModal] = useState<{ open: boolean; feature: 'banking' | 'analytics' | 'blueprint' | 'voice' | null }>({ open: false, feature: null });
   const scrollRef = useRef<ScrollView>(null);
   const handledParamsRef = useRef<string | null>(null);
 
@@ -220,47 +223,99 @@ export default function FaithScreen() {
     }
   };
 
+  const handlePlusPress = async () => {
+    try {
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.8,
+      });
+      if (pickerResult.canceled || !pickerResult.assets[0]) return;
+
+      const manipulated = await ImageManipulator.manipulateAsync(
+        pickerResult.assets[0].uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+
+      const response = await fetch(`${API_BASE_URL}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_base64: manipulated.base64,
+          media_type: 'image/jpeg',
+          user_id: userId,
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.analysis) {
+        const a = { ...data.analysis };
+
+        if (a.product_barcode) {
+          try {
+            const priceRes = await fetch(`${API_BASE_URL}/price-check`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ barcode: a.product_barcode, user_id: userId }),
+            });
+            const priceData = await priceRes.json();
+            if (priceData.success && priceData.cheapest_price != null) {
+              a.estimated_price = priceData.cheapest_price;
+            }
+          } catch { /* silent — keep Claude's estimate */ }
+        }
+
+        const msg =
+          `I just scanned a product: ${a.product_identified}.` +
+          (a.estimated_price ? ` Estimated price: £${Number(a.estimated_price).toFixed(2)}.` : '') +
+          ` It scored ${a.overall_score}/100 — ${a.verdict} What do you think about this purchase?`;
+        sendMessage(msg);
+      }
+    } catch {
+      // Silent fail — picker or analysis errors shouldn't disrupt the chat
+    }
+  };
+
   return (
     <AnimatedScreen style={styles.container}>
       {/* Wave background */}
       <WaveBackground prefix="faith" />
+
+      {/* Header — outside KAV so it stays fixed when keyboard appears */}
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity style={styles.menuButton} onPress={() => setHistoryDrawerOpen(true)}>
+            <MenuIcon />
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>Faith</Text>
+            <Text style={styles.headerSubtitle}>Your financial AI companion</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.newChatButton}
+            onPress={handleNewChat}
+            accessibilityLabel="Start new chat"
+            accessibilityHint="Clears the current conversation and starts fresh"
+          >
+            <PlusIcon />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.avatarButton} onPress={() => router.push({ pathname: '/profile', params: { openSettings: 'true' } })}>
+            {profile?.photo_url ? (
+              <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
+            ) : (
+              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
+                <View style={styles.avatarShine} />
+                <Text style={styles.avatarText}>{initials}</Text>
+              </LinearGradient>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
 
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.menuButton} onPress={() => setHistoryDrawerOpen(true)}>
-              <MenuIcon />
-            </TouchableOpacity>
-            <View style={styles.headerTitleContainer}>
-              <Text style={styles.headerTitle}>Faith</Text>
-              <Text style={styles.headerSubtitle}>Your financial AI companion</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.newChatButton}
-              onPress={handleNewChat}
-              accessibilityLabel="Start new chat"
-              accessibilityHint="Clears the current conversation and starts fresh"
-            >
-              <PlusIcon />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.avatarButton} onPress={() => router.push({ pathname: '/profile', params: { openSettings: 'true' } })}>
-              {profile?.photo_url ? (
-                <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
-              ) : (
-                <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
-                  <View style={styles.avatarShine} />
-                  <Text style={styles.avatarText}>{initials}</Text>
-                </LinearGradient>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {/* Messages or Empty State */}
         {isLoadingSession ? (
           <View style={styles.emptyState}>
@@ -297,6 +352,7 @@ export default function FaithScreen() {
             contentContainerStyle={styles.messagesContent}
             onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
             showsVerticalScrollIndicator={false}
+            keyboardDismissMode="on-drag"
           >
             {/* Date divider */}
             <View style={styles.dateDivider}>
@@ -393,9 +449,8 @@ export default function FaithScreen() {
           value={inputText}
           onChangeText={setInputText}
           onSend={handleSend}
-          onMicPress={() => {
-            // Voice input coming soon, but the affordance is now visible.
-          }}
+          onMicPress={() => setComingSoonModal({ open: true, feature: 'voice' })}
+          onPlusPress={handlePlusPress}
           showMic={true}
           onNavigate={(screen) => {
             if (screen === 'profile') router.push('/profile');
@@ -413,13 +468,20 @@ export default function FaithScreen() {
       <ComingSoonModal
         visible={comingSoonModal.open}
         onClose={() => setComingSoonModal({ open: false, feature: null })}
-        feature={comingSoonModal.feature === 'banking' ? 'Banking' : comingSoonModal.feature === 'analytics' ? 'Analytics' : 'Blueprint'}
-        featureKey={comingSoonModal.feature || 'banking'}
+        feature={
+          comingSoonModal.feature === 'banking' ? 'Banking'
+          : comingSoonModal.feature === 'analytics' ? 'Analytics'
+          : comingSoonModal.feature === 'voice' ? 'Voice Input'
+          : 'Blueprint'
+        }
+        featureKey={comingSoonModal.feature === 'voice' ? 'premium' : comingSoonModal.feature || 'banking'}
         description={
           comingSoonModal.feature === 'banking'
             ? 'Connect your bank accounts and see all your transactions in one place, categorised by your spending personality.'
             : comingSoonModal.feature === 'analytics'
             ? 'Deep insights into your spending patterns, with personalised recommendations based on your OCEAN profile.'
+            : comingSoonModal.feature === 'voice'
+            ? 'Ask Faith anything hands-free. Voice input is on its way — join the list to get early access.'
             : 'See the full context behind your spending patterns and get a personalised action plan.'
         }
       />

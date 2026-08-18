@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUser } from '../contexts/UserContext';
+import { traitMetadata } from '../lib/traits';
 
 const traitColors: Record<string, { from: string; to: string }> = {
   Openness: { from: '#005FCC', to: '#00C2FF' },
@@ -17,34 +18,6 @@ const traitColors: Record<string, { from: string; to: string }> = {
   Extraversion: { from: '#FF9F0A', to: '#FECA57' },
   Agreeableness: { from: '#FF3B30', to: '#FF6B6B' },
   Neuroticism: { from: '#5AC8FA', to: '#007AFF' },
-};
-
-const traitDescriptions: Record<string, { high: string; low: string; tip: string }> = {
-  Openness: {
-    high: "Your high openness makes you naturally drawn to novelty — new products, experiences, and ideas light you up.",
-    low: "You prefer proven, familiar approaches — trendy products and speculative investments don't appeal to you.",
-    tip: "Channel your curiosity into free experiences like museums, podcasts, and library books.",
-  },
-  Conscientiousness: {
-    high: "You're a disciplined planner who thrives with structure, budgets, and step-by-step breakdowns.",
-    low: "You tend to wing it financially — rigid budgets feel restrictive and you often spend impulsively.",
-    tip: "Automate your savings with standing orders so planning happens without effort.",
-  },
-  Extraversion: {
-    high: "Social situations energise you, but they can quietly drain your account — nights out, rounds, and group activities add up.",
-    low: "You're an independent decision-maker who isn't swayed by social pressure to spend.",
-    tip: "Suggest free or cheaper social plans first — your friends won't mind.",
-  },
-  Agreeableness: {
-    high: "You find it hard to say no — splitting bills, lending money, and buying rounds even when you shouldn't.",
-    low: "You're assertive with money and good at setting boundaries, though generosity may feel unnatural.",
-    tip: "Practice saying 'I'll get the next one' — it's a boundary that preserves the friendship.",
-  },
-  Neuroticism: {
-    high: "Money makes you anxious — unexpected expenses, dips in your balance, and financial decisions cause stress.",
-    low: "You're relaxed about finances, but may under-monitor your accounts and miss warning signs.",
-    tip: "Set one calm review day per month instead of checking impulsively.",
-  },
 };
 
 // Default/fallback scores
@@ -114,7 +87,7 @@ export default function ResultsScreen() {
           {Object.entries(scores).map(([trait, score]) => {
             const isExpanded = expandedTrait === trait;
             const colors = traitColors[trait];
-            const desc = traitDescriptions[trait];
+            const meta = traitMetadata[trait.toLowerCase()];
             const isHigh = score >= 50;
 
             return (
@@ -140,14 +113,14 @@ export default function ResultsScreen() {
                 </View>
 
                 {/* Expanded description */}
-                {isExpanded && (
+                {isExpanded && meta && (
                   <View style={styles.traitExpanded}>
                     <Text style={styles.traitDescription}>
-                      {isHigh ? desc.high : desc.low}
+                      {isHigh ? meta.highProfile : meta.lowProfile}
                     </Text>
                     <View style={styles.tipContainer}>
                       <Text style={styles.tipLabel}>💡 Tip</Text>
-                      <Text style={styles.tipText}>{desc.tip}</Text>
+                      <Text style={styles.tipText}>{meta.tip}</Text>
                     </View>
                   </View>
                 )}

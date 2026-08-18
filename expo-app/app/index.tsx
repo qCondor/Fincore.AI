@@ -57,11 +57,11 @@ export default function SplashScreen() {
       if (!hasStartedOnboarding) {
         router.replace('/login');
       } else if (hasCompletedOnboarding) {
-        router.replace('/(tabs)/faith');
+        router.replace('/(tabs)');
       } else {
         router.replace('/info');
       }
-    }, 700);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [isLoading, userName, userEmail, authProvider, hasCompletedOnboarding]);
