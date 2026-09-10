@@ -4,11 +4,14 @@ import { StatusBar } from 'expo-status-bar';
 import { UserProvider, useUser } from '../contexts/UserContext';
 import { SecurityProvider, useSecurity } from '../contexts/SecurityContext';
 import { NotificationProvider } from '../contexts/NotificationContext';
+import { PreferencesProvider } from '../contexts/PreferencesContext';
+import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
 import { LockScreen } from '../components/LockScreen';
 
 function AppContent() {
   const { isLocked, isLoaded, setUserId } = useSecurity();
   const { userId } = useUser();
+  const t = useTheme();
 
   useEffect(() => {
     setUserId(userId);
@@ -22,7 +25,7 @@ function AppContent() {
 
   return (
     <NotificationProvider userId={userId}>
-      <StatusBar style="light" />
+      <StatusBar style={t.statusBarStyle} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="login" />
@@ -36,12 +39,29 @@ function AppContent() {
   );
 }
 
+/**
+ * Preferences must resolve before the theme (it holds the Light/Dark/System
+ * choice), and the theme must be available to everything below it including
+ * the lock screen — hence this ordering.
+ */
+function Providers() {
+  const { userId } = useUser();
+
+  return (
+    <PreferencesProvider userId={userId}>
+      <ThemeProvider>
+        <SecurityProvider>
+          <AppContent />
+        </SecurityProvider>
+      </ThemeProvider>
+    </PreferencesProvider>
+  );
+}
+
 export default function RootLayout() {
   return (
     <UserProvider>
-      <SecurityProvider>
-        <AppContent />
-      </SecurityProvider>
+      <Providers />
     </UserProvider>
   );
 }

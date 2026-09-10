@@ -1,20 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   ScrollView,
   Image,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
-import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
+import { useHaptics } from '../../lib/haptics';
+import { useSounds } from '../../lib/sounds';
 import { ComingSoonModal } from '../../components/ComingSoonModal';
 import { HistoryDrawer } from '../../components/HistoryDrawer';
 import { useProfile } from '../../hooks/useProfile';
@@ -32,10 +36,15 @@ import { WaveBackground } from '../../components/WaveBackground';
 import { BottomInputBar } from '../../components/BottomInputBar';
 import { MaskedAmount } from '../../components/MaskedText';
 import { AnimatedScreen } from '../../components/AnimatedScreen';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
 
 export default function ScanScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const haptics = useHaptics();
+  const sounds = useSounds();
   const { userId } = useUser();
   const { initials, profile } = useProfile({ userId: userId ?? undefined });
   const [permission, requestPermission] = useCameraPermissions();
@@ -45,12 +54,25 @@ export default function ScanScreen() {
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [isFromHistory, setIsFromHistory] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const scan = useScan({ userId: userId ?? undefined });
 
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   const handleCapture = async () => {
     if (scan.isAnalysing) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.impact();
+    sounds.playCapture();
     const result = await scan.captureAndAnalyse();
     if (result) {
       setIsFromHistory(false);
@@ -66,7 +88,7 @@ export default function ScanScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        haptics.impact();
         const analysisResult = await scan.analyseFromUri(result.assets[0].uri);
         if (analysisResult) {
           setIsFromHistory(false);
@@ -109,7 +131,7 @@ export default function ScanScreen() {
   if (!permission) {
     return (
       <AnimatedScreen style={styles.container}>
-        <LinearGradient colors={['#56CCF2', '#2F80ED', '#005FCC']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={t.gradients.main} style={StyleSheet.absoluteFill} />
       </AnimatedScreen>
     );
   }
@@ -117,7 +139,7 @@ export default function ScanScreen() {
   if (!permission.granted) {
     return (
       <AnimatedScreen style={styles.container}>
-        <LinearGradient colors={['#56CCF2', '#2F80ED', '#005FCC']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={t.gradients.main} style={StyleSheet.absoluteFill} />
         <View style={styles.centered}>
           <Text style={styles.permissionText}>Camera access is needed to scan products</Text>
           <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
@@ -145,7 +167,7 @@ export default function ScanScreen() {
               {profile?.photo_url ? (
                 <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
               ) : (
-                <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
+                <LinearGradient colors={t.gradients.avatar} style={styles.avatarGradient}>
                   <View style={styles.avatarShine} />
                   <Text style={styles.avatarText}>{initials}</Text>
                 </LinearGradient>
@@ -300,6 +322,8 @@ export default function ScanScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.keyboardDismissWrapper}>
       {/* Wave background */}
       <WaveBackground prefix="scan" />
 
@@ -314,7 +338,7 @@ export default function ScanScreen() {
             {profile?.photo_url ? (
               <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
             ) : (
-              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
+              <LinearGradient colors={t.gradients.avatar} style={styles.avatarGradient}>
                 <View style={styles.avatarShine} />
                 <Text style={styles.avatarText}>{initials}</Text>
               </LinearGradient>
@@ -324,7 +348,12 @@ export default function ScanScreen() {
       </View>
 
       {/* Main content */}
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentInner}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         {/* Scan viewfinder */}
         <View style={styles.viewfinder}>
           {/* Camera area inside */}
@@ -344,10 +373,10 @@ export default function ScanScreen() {
 
           {/* Corner brackets */}
           <Svg style={styles.cornerSvg} viewBox="0 0 300 320" fill="none">
-            <Path d="M10,60 L10,28 Q10,10 28,10 L60,10" stroke="white" strokeWidth={4} strokeLinecap="round" />
-            <Path d="M240,10 L272,10 Q290,10 290,28 L290,60" stroke="white" strokeWidth={4} strokeLinecap="round" />
-            <Path d="M10,260 L10,292 Q10,310 28,310 L60,310" stroke="white" strokeWidth={4} strokeLinecap="round" />
-            <Path d="M240,310 L272,310 Q290,310 290,292 L290,260" stroke="white" strokeWidth={4} strokeLinecap="round" />
+            <Path d="M10,60 L10,28 Q10,10 28,10 L60,10" stroke={t.textPrimary} strokeWidth={4} strokeLinecap="round" />
+            <Path d="M240,10 L272,10 Q290,10 290,28 L290,60" stroke={t.textPrimary} strokeWidth={4} strokeLinecap="round" />
+            <Path d="M10,260 L10,292 Q10,310 28,310 L60,310" stroke={t.textPrimary} strokeWidth={4} strokeLinecap="round" />
+            <Path d="M240,310 L272,310 Q290,310 290,292 L290,260" stroke={t.textPrimary} strokeWidth={4} strokeLinecap="round" />
           </Svg>
 
           {/* Torch toggle */}
@@ -382,7 +411,11 @@ export default function ScanScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </ScrollView>
+
+      {keyboardVisible && (
+        <BlurView intensity={20} tint={t.blurTint} style={StyleSheet.absoluteFill} />
+      )}
 
       <BottomInputBar
         activeScreen="scan"
@@ -391,7 +424,7 @@ export default function ScanScreen() {
         onChangeText={setInputText}
         onSend={async () => {
           if (inputText.trim() && !scan.isAnalysing) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            haptics.impact();
             const result = await scan.analyseFromText(inputText.trim());
             if (result) {
               setInputText('');
@@ -413,6 +446,8 @@ export default function ScanScreen() {
         bottomInset={insets.bottom}
         disabled={scan.isAnalysing}
       />
+      </View>
+      </TouchableWithoutFeedback>
 
       <ComingSoonModal
         visible={comingSoonModal.open}
@@ -441,11 +476,14 @@ export default function ScanScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.background,
     overflow: 'hidden',
+  },
+  keyboardDismissWrapper: {
+    flex: 1,
   },
   centered: {
     flex: 1,
@@ -454,20 +492,20 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   permissionText: {
-    color: '#fff',
-    fontSize: 16,
+    color: t.textPrimary,
+    fontSize: t.type.bodyLarge,
     textAlign: 'center',
     marginBottom: 20,
   },
   permissionButton: {
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 24,
   },
   permissionButtonText: {
-    color: '#005FCC',
-    fontSize: 15,
+    color: t.primaryOnSurface,
+    fontSize: t.type.body,
     fontWeight: '600',
   },
   topBar: {
@@ -488,9 +526,9 @@ const styles = StyleSheet.create({
   },
   topBarTitle: {
     flex: 1,
-    fontSize: 28,
+    fontSize: t.type.headline,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     letterSpacing: -0.5,
   },
   avatarButton: {
@@ -499,7 +537,7 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.6)',
+    borderColor: t.textMuted,
   },
   avatarGradient: {
     flex: 1,
@@ -516,15 +554,19 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   avatarText: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
   content: {
     flex: 1,
+  },
+  contentInner: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   viewfinder: {
     width: 300,
@@ -540,7 +582,7 @@ const styles = StyleSheet.create({
     bottom: 10,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: '#000',
+    backgroundColor: t.shadowBase,
   },
   camera: {
     flex: 1,
@@ -556,7 +598,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: t.overlayMedium,
     borderRadius: 12,
   },
   cornerSvg: {
@@ -573,14 +615,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: t.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
   },
   torchButtonActive: {
-    backgroundColor: 'rgba(255,214,10,0.3)',
+    backgroundColor: t.highlightTint,
   },
   captureSection: {
     alignItems: 'center',
@@ -590,10 +632,10 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: 'rgba(0,95,204,0.35)',
+    shadowColor: t.shadowBrand,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 1,
     shadowRadius: 32,
@@ -603,15 +645,15 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     margin: 8,
     borderRadius: 28,
-    backgroundColor: 'rgba(0,95,204,0.1)',
+    backgroundColor: t.primaryTintSubtle,
   },
   captureSpinner: {
     width: 32,
     height: 32,
     borderRadius: 16,
     borderWidth: 3,
-    borderColor: 'rgba(0,95,204,0.3)',
-    borderTopColor: '#005FCC',
+    borderColor: t.primaryTintBorder,
+    borderTopColor: t.primary,
   },
   captureTextRow: {
     flexDirection: 'row',
@@ -619,16 +661,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   tapToScan: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.bodySmall,
+    color: t.textFaint,
   },
   dotSeparator: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.2)',
+    fontSize: t.type.captionSmall,
+    color: t.overlayMedium,
   },
   uploadLink: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.bodySmall,
+    color: t.textFaint,
     textDecorationLine: 'underline',
   },
   // Scan result styles
@@ -640,11 +682,11 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   productCard: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: t.surfaceCard,
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: t.overlayBorder,
     marginBottom: 16,
   },
   productCardInner: {
@@ -658,7 +700,7 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderRadius: 14,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: t.surfaceInset,
     overflow: 'hidden',
   },
   productImage: {
@@ -675,13 +717,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   productName: {
-    fontSize: 17,
+    fontSize: t.type.subtitle,
     fontWeight: '700',
-    color: '#1D1D1F',
+    color: t.textOnSurfaceStrong,
   },
   productMeta: {
-    fontSize: 13,
-    color: '#AEAEB2',
+    fontSize: t.type.bodySmall,
+    color: t.textOnSurfaceFaint,
     marginTop: 4,
   },
   verdictBanner: {
@@ -692,30 +734,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   verdictGreen: {
-    backgroundColor: 'rgba(34,197,94,0.1)',
-    borderColor: 'rgba(34,197,94,0.3)',
+    backgroundColor: t.successSurface,
+    borderColor: t.successBorder,
   },
   verdictRed: {
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    borderColor: 'rgba(239,68,68,0.3)',
+    backgroundColor: t.dangerSurface,
+    borderColor: t.dangerBorder,
   },
   verdictAmber: {
-    backgroundColor: 'rgba(245,158,11,0.1)',
-    borderColor: 'rgba(245,158,11,0.3)',
+    backgroundColor: t.warningSurface,
+    borderColor: t.warningBorder,
   },
   verdictText: {
-    fontSize: 14,
+    fontSize: t.type.bodyCompact,
     fontWeight: '600',
     textAlign: 'center',
   },
   verdictTextGreen: {
-    color: '#166534',
+    color: t.successText,
   },
   verdictTextRed: {
-    color: '#991B1B',
+    color: t.dangerText,
   },
   verdictTextAmber: {
-    color: '#92400E',
+    color: t.warningText,
   },
   priceRow: {
     flexDirection: 'row',
@@ -724,45 +766,45 @@ const styles = StyleSheet.create({
   },
   priceCard: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: t.surfaceCard,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: t.overlayBorder,
     padding: 16,
     alignItems: 'center',
   },
   priceLabel: {
-    fontSize: 11,
+    fontSize: t.type.captionSmall,
     fontWeight: '600',
-    color: '#AEAEB2',
+    color: t.textOnSurfaceFaint,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
   priceValue: {
-    fontSize: 32,
+    fontSize: t.type.displaySmall,
     fontWeight: '700',
-    color: '#1D1D1F',
+    color: t.textOnSurfaceStrong,
     marginTop: 8,
   },
   priceLoading: {
-    fontSize: 16,
+    fontSize: t.type.bodyLarge,
     fontWeight: '600',
-    color: '#6E6E73',
+    color: t.textOnSurfaceMuted,
     marginTop: 16,
   },
   feelsLikeCard: {
     flex: 1,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: t.overlayMedium,
     padding: 16,
     alignItems: 'center',
     overflow: 'hidden',
   },
   feelsLikeLabel: {
-    fontSize: 11,
+    fontSize: t.type.captionSmall,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.5)',
+    color: t.textFaint,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
@@ -771,14 +813,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   feelsLikeLockedTitle: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '700',
-    color: '#1D1D1F',
+    color: t.textOnSurfaceStrong,
     marginTop: 8,
   },
   feelsLikeLockedDesc: {
-    fontSize: 10,
-    color: '#6E6E73',
+    fontSize: t.type.tiny,
+    color: t.textOnSurfaceMuted,
     textAlign: 'center',
     marginTop: 4,
   },
@@ -786,70 +828,70 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.primary,
     borderRadius: 20,
   },
   feelsLikeButtonText: {
-    fontSize: 11,
+    fontSize: t.type.captionSmall,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
   reasoningTitle: {
-    fontSize: 22,
+    fontSize: t.type.titleLarge,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     marginBottom: 12,
     paddingHorizontal: 4,
   },
   insightCard: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: t.surfaceCard,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: t.overlayBorder,
     padding: 20,
     marginBottom: 12,
   },
   insightTitle: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '700',
-    color: '#1D1D1F',
+    color: t.textOnSurfaceStrong,
     marginBottom: 12,
   },
   insightText: {
-    fontSize: 14,
-    color: '#6E6E73',
-    lineHeight: 20,
+    fontSize: t.type.bodyCompact,
+    color: t.textOnSurfaceMuted,
+    lineHeight: t.line.body,
   },
   recommendationItem: {
     flexDirection: 'row',
     marginBottom: 8,
   },
   recommendationBullet: {
-    fontSize: 14,
-    color: '#005FCC',
+    fontSize: t.type.bodyCompact,
+    color: t.primaryOnSurface,
     marginRight: 8,
   },
   recommendationText: {
     flex: 1,
-    fontSize: 14,
-    color: '#6E6E73',
-    lineHeight: 20,
+    fontSize: t.type.bodyCompact,
+    color: t.textOnSurfaceMuted,
+    lineHeight: t.line.body,
   },
   chatButton: {
     marginTop: 8,
     height: 50,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.primary,
     borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: 'rgba(0,95,204,0.35)',
+    shadowColor: t.shadowBrand,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 1,
     shadowRadius: 16,
   },
   chatButtonText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
 });

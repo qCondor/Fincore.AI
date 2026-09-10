@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
 
 interface SettingsRowProps {
   icon: React.ReactNode;
@@ -14,14 +15,18 @@ interface SettingsRowProps {
 }
 
 function ChevronIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.overlayStrong} strokeWidth={2}>
       <Path d="M9 18l6-6-6-6" />
     </Svg>
   );
 }
 
 export function SettingsRow({ icon, label, value, onPress, showChevron = true, danger = false, isLast = false, loading = false }: SettingsRowProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+
   return (
     <TouchableOpacity
       style={[styles.container, !isLast && styles.border]}
@@ -32,7 +37,7 @@ export function SettingsRow({ icon, label, value, onPress, showChevron = true, d
       <View style={styles.iconContainer}>{icon}</View>
       <Text style={[styles.label, danger && styles.dangerLabel]}>{label}</Text>
       {loading ? (
-        <ActivityIndicator size="small" color="rgba(255,255,255,0.5)" style={{ marginRight: 8 }} />
+        <ActivityIndicator size="small" color={t.textFaint} style={{ marginRight: 8 }} />
       ) : (
         <>
           {value && <Text style={styles.value}>{value}</Text>}
@@ -43,7 +48,7 @@ export function SettingsRow({ icon, label, value, onPress, showChevron = true, d
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -52,28 +57,28 @@ const styles = StyleSheet.create({
   },
   border: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: t.overlayHairline,
   },
   iconContainer: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   label: {
     flex: 1,
-    fontSize: 15,
-    color: '#fff',
+    fontSize: t.type.body,
+    color: t.textPrimary,
   },
   dangerLabel: {
-    color: '#FF453A',
+    color: t.danger,
   },
   value: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.bodyCompact,
+    color: t.textFaint,
     marginRight: 8,
   },
 });

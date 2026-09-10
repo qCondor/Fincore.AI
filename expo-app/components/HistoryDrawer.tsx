@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,13 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path, Circle, Line, Defs, LinearGradient as SvgLinearGradient, Stop, ClipPath, Rect, G } from 'react-native-svg';
+import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useChatHistory, groupSessionsByDate, type ChatSession } from '../hooks/useChatHistory';
 import { useScanHistory, groupScansByDate, type ScanRecord } from '../hooks/useScanHistory';
 import { useUser } from '../contexts/UserContext';
+import { formatCurrency } from '../lib/format';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
+import { WaveBackground } from './WaveBackground';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -30,8 +33,9 @@ interface HistoryDrawerProps {
 }
 
 function XIcon() {
+  const t = useTheme();
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2} strokeLinecap="round">
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2} strokeLinecap="round">
       <Line x1={18} y1={6} x2={6} y2={18} />
       <Line x1={6} y1={6} x2={18} y2={18} />
     </Svg>
@@ -39,8 +43,9 @@ function XIcon() {
 }
 
 function SearchIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2} strokeLinecap="round">
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2} strokeLinecap="round">
       <Circle cx={11} cy={11} r={8} />
       <Line x1={21} y1={21} x2={16.65} y2={16.65} />
     </Svg>
@@ -48,24 +53,27 @@ function SearchIcon() {
 }
 
 function ArrowLeftIcon() {
+  const t = useTheme();
   return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth={2} strokeLinecap="round">
+    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={t.textFaint} strokeWidth={2} strokeLinecap="round">
       <Path d="M19 12H5M12 19l-7-7 7-7" />
     </Svg>
   );
 }
 
 function MessageIcon() {
+  const t = useTheme();
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
     </Svg>
   );
 }
 
 function CameraIcon() {
+  const t = useTheme();
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11z" />
       <Circle cx={12} cy={13} r={4} />
     </Svg>
@@ -73,44 +81,11 @@ function CameraIcon() {
 }
 
 function EmptyMessageIcon() {
+  const t = useTheme();
   return (
-    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2}>
+    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={t.textGhost} strokeWidth={2}>
       <Path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
     </Svg>
-  );
-}
-
-function WaveBackground() {
-  return (
-    <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
-      <Svg
-        width="100%"
-        height="100%"
-        viewBox="0 0 393 852"
-        preserveAspectRatio="none"
-        style={StyleSheet.absoluteFill}
-      >
-        <Defs>
-          <ClipPath id="clip-drawer">
-            <Rect x="0" y="0" width="393" height="852" />
-          </ClipPath>
-          <SvgLinearGradient id="base-gradient-drawer" x1="0" y1="0.5" x2="1" y2="0.5">
-            <Stop offset="0%" stopColor="#3CB8F0" />
-            <Stop offset="50%" stopColor="#0A6FE8" />
-            <Stop offset="100%" stopColor="#0035A0" />
-          </SvgLinearGradient>
-          <SvgLinearGradient id="wave1-gradient-drawer" x1="0.8" y1="0" x2="0.2" y2="1">
-            <Stop offset="0%" stopColor="#A8EAFF" stopOpacity={0.55} />
-            <Stop offset="45%" stopColor="#70D8FF" stopOpacity={0.35} />
-            <Stop offset="100%" stopColor="#5ED4FF" stopOpacity={0.05} />
-          </SvgLinearGradient>
-        </Defs>
-        <Path d="M0,0 L393,0 L393,852 L0,852 Z" fill="url(#base-gradient-drawer)" />
-        <G clipPath="url(#clip-drawer)">
-          <Path d="M393,-50 C410,250 100,350 0,550 C-30,650 50,800 0,902 L393,902 Z" fill="url(#wave1-gradient-drawer)" />
-        </G>
-      </Svg>
-    </View>
   );
 }
 
@@ -123,6 +98,8 @@ export function HistoryDrawer({
   activeSessionId,
   source,
 }: HistoryDrawerProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(-SCREEN_WIDTH)).current;
   const [searchOpen, setSearchOpen] = useState(false);
@@ -204,7 +181,7 @@ export function HistoryDrawer({
         { transform: [{ translateX: slideAnim }] },
       ]}
     >
-      <WaveBackground />
+      <WaveBackground prefix="drawer" waves={1} animated={false} />
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -225,7 +202,7 @@ export function HistoryDrawer({
               onChangeText={setSearchQuery}
               style={styles.searchInput}
               placeholder="Search conversations..."
-              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholderTextColor={t.overlayStrong}
             />
             {searchQuery !== '' && (
               <TouchableOpacity
@@ -394,7 +371,7 @@ export function HistoryDrawer({
                       <Text style={styles.sessionMeta}>
                         {scan.overall_score ? `Score: ${scan.overall_score}/100` : ''}
                         {scan.overall_score && price ? ' · ' : ''}
-                        {price ? `£${price.toFixed(2)}` : ''}
+                        {price ? formatCurrency(price) : ''}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -417,7 +394,7 @@ export function HistoryDrawer({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     position: 'absolute',
     top: 0,
@@ -446,9 +423,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: t.overlaySubtle,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -456,9 +433,9 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 50,
     borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: t.overlaySubtle,
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 8,
@@ -472,15 +449,15 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
-    color: '#fff',
+    fontSize: t.type.body,
+    color: t.textPrimary,
     marginLeft: 8,
   },
   clearButton: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: t.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -489,9 +466,9 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   title: {
-    fontSize: 34,
+    fontSize: t.type.display,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     letterSpacing: -0.5,
   },
   scrollView: {
@@ -510,15 +487,15 @@ const styles = StyleSheet.create({
   skeletonLabel: {
     width: 80,
     height: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     borderRadius: 4,
     marginBottom: 8,
   },
   skeletonCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: t.overlayHairline,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: t.overlayFaint,
     overflow: 'hidden',
   },
   skeletonItem: {
@@ -527,11 +504,11 @@ const styles = StyleSheet.create({
   },
   skeletonItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: t.overlayFaint,
   },
   skeletonText: {
     height: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     borderRadius: 4,
     width: '75%',
   },
@@ -544,20 +521,20 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 16,
+    fontSize: t.type.bodyLarge,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.8)',
+    color: t.textSecondary,
     marginBottom: 4,
   },
   emptySubtitle: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.bodySmall,
+    color: t.textFaint,
     textAlign: 'center',
     maxWidth: 200,
   },
@@ -565,17 +542,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   groupLabel: {
-    fontSize: 18,
+    fontSize: t.type.labelLarge,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     marginBottom: 8,
     paddingHorizontal: 4,
   },
   groupCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: t.overlayHairline,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: t.overlayFaint,
     overflow: 'hidden',
   },
   sessionItem: {
@@ -584,18 +561,18 @@ const styles = StyleSheet.create({
   },
   sessionItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: t.overlayFaint,
   },
   sessionItemActive: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
   },
   sessionTitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    fontSize: t.type.bodyCompact,
+    color: t.textTertiary,
   },
   sessionMeta: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
+    fontSize: t.type.captionSmall,
+    color: t.textGhost,
     marginTop: 2,
   },
   fab: {
@@ -604,16 +581,16 @@ const styles = StyleSheet.create({
     height: 50,
     paddingHorizontal: 20,
     borderRadius: 25,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: t.overlaySubtle,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   fabText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
 });

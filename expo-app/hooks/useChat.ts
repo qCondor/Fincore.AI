@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import EventSource from 'react-native-sse';
 import { API_BASE_URL } from '../config';
+import { getCachedSessionToken } from '../lib/session';
 
 export type MessageRole = 'user' | 'assistant';
 
@@ -103,13 +104,14 @@ export function useChat({
       eventSourceRef.current?.close();
 
 
+      const sessionToken = getCachedSessionToken();
       const es = new EventSource(`${baseUrl}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
         },
         body: JSON.stringify({
-          user_id: userId,
           message: trimmed,
           session_id: sessionIdRef.current,
         }),
@@ -140,6 +142,8 @@ export function useChat({
           const chunk = JSON.parse(data) as string;
           fullContent += chunk;
 
+          const { cleanContent: streamContent } = parseSuggestions(fullContent);
+
           if (firstChunk) {
             firstChunk = false;
             setIsTyping(false);
@@ -148,7 +152,7 @@ export function useChat({
               {
                 id: assistantId,
                 role: 'assistant' as const,
-                content: fullContent,
+                content: streamContent,
                 timestamp: new Date(),
                 streaming: true,
               },
@@ -156,7 +160,7 @@ export function useChat({
           } else {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId ? { ...m, content: fullContent } : m
+                m.id === assistantId ? { ...m, content: streamContent } : m
               )
             );
           }
@@ -226,8 +230,10 @@ export function useChat({
     eventSourceRef.current?.close();
 
     try {
+      const sessionToken = getCachedSessionToken();
       const response = await fetch(
-        `${baseUrl}/users/${userId}/conversations/${sessionId}`
+        `${baseUrl}/users/conversations/${sessionId}`,
+        { headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {} }
       );
 
       if (!response.ok) {

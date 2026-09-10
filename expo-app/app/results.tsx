@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,14 +11,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUser } from '../contexts/UserContext';
 import { traitMetadata } from '../lib/traits';
-
-const traitColors: Record<string, { from: string; to: string }> = {
-  Openness: { from: '#005FCC', to: '#00C2FF' },
-  Conscientiousness: { from: '#34C759', to: '#30D158' },
-  Extraversion: { from: '#FF9F0A', to: '#FECA57' },
-  Agreeableness: { from: '#FF3B30', to: '#FF6B6B' },
-  Neuroticism: { from: '#5AC8FA', to: '#007AFF' },
-};
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 // Default/fallback scores
 const defaultScores = {
@@ -30,6 +23,8 @@ const defaultScores = {
 };
 
 export default function ResultsScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ scores?: string }>();
@@ -64,7 +59,7 @@ export default function ResultsScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#56CCF2', '#2F80ED', '#005FCC']}
+        colors={t.gradients.main}
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -86,7 +81,7 @@ export default function ResultsScreen() {
         <View style={styles.traitsContainer}>
           {Object.entries(scores).map(([trait, score]) => {
             const isExpanded = expandedTrait === trait;
-            const colors = traitColors[trait];
+            const colors = t.traitGradients[trait];
             const meta = traitMetadata[trait.toLowerCase()];
             const isHigh = score >= 50;
 
@@ -142,7 +137,7 @@ export default function ResultsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -153,22 +148,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   title: {
-    fontSize: 28,
+    fontSize: t.type.headline,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     letterSpacing: -0.5,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: t.type.body,
+    color: t.textMuted,
     marginBottom: 24,
   },
   traitsContainer: {
     gap: 12,
   },
   traitCard: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: t.surfaceCard,
     borderRadius: 20,
     padding: 16,
   },
@@ -179,19 +174,19 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   traitName: {
-    fontSize: 16,
+    fontSize: t.type.bodyLarge,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
   },
   traitScore: {
-    fontSize: 18,
+    fontSize: t.type.labelLarge,
     fontWeight: '700',
-    color: '#2F80ED',
+    color: t.secondary,
   },
   scoreTrack: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: t.shadowSoftAlt,
     overflow: 'hidden',
   },
   scoreFill: {
@@ -202,52 +197,52 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.06)',
+    borderTopColor: t.shadowSoft,
   },
   traitDescription: {
-    fontSize: 14,
-    color: '#444',
-    lineHeight: 20,
+    fontSize: t.type.bodyCompact,
+    color: t.textOnLightBody,
+    lineHeight: t.line.body,
     marginBottom: 12,
   },
   tipContainer: {
-    backgroundColor: 'rgba(47, 128, 237, 0.08)',
+    backgroundColor: t.secondaryTint,
     borderRadius: 12,
     padding: 12,
   },
   tipLabel: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '600',
-    color: '#2F80ED',
+    color: t.secondary,
     marginBottom: 4,
   },
   tipText: {
-    fontSize: 13,
-    color: '#444',
-    lineHeight: 18,
+    fontSize: t.type.bodySmall,
+    color: t.textOnLightBody,
+    lineHeight: t.line.compact,
   },
   expandHint: {
-    fontSize: 11,
-    color: '#999',
+    fontSize: t.type.captionSmall,
+    color: t.textOnSurfaceSubtle,
     textAlign: 'center',
     marginTop: 8,
   },
   continueButton: {
     marginTop: 24,
     height: 50,
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: t.shadowBase,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
   },
   continueButtonText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#2F80ED',
+    color: t.secondary,
   },
 });

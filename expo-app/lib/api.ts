@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config';
+import { getCachedSessionToken } from './session';
 
 interface ApiResponse<T> {
   data: T | null;
@@ -16,12 +17,14 @@ export async function apiFetch<T>(
   options: FetchOptions = {}
 ): Promise<ApiResponse<T>> {
   const { method = 'GET', body, headers = {} } = options;
+  const sessionToken = getCachedSessionToken();
 
   try {
     const res = await fetch(`${API_BASE_URL}${endpoint}`, {
       method,
       headers: {
         ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
         ...headers,
       },
       body: body ? JSON.stringify(body) : undefined,

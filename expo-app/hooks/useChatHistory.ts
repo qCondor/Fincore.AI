@@ -56,7 +56,7 @@ export function useChatHistory({
     setError(null);
 
     const { data, error: fetchError } = await apiFetch<{ sessions: ChatSession[] }>(
-      `/users/${userId}/conversations?sessions=true`
+      '/users/conversations?sessions=true'
     );
 
     if (fetchError) {

@@ -34,7 +34,6 @@ class AnalyzeRequest(BaseModel):
     image_base64: str
     media_type: str = "image/jpeg"
     user_context: Optional[str] = None
-    user_id: Optional[str] = None
     user_name: Optional[str] = None  # For Langfuse tracing (fallback to user_id)
     session_id: Optional[str] = None  # For Langfuse session continuity
 
@@ -42,7 +41,6 @@ class AnalyzeRequest(BaseModel):
 class AnalyzeTextRequest(BaseModel):
     product_description: str  # e.g., "Big ole cookie", "iPhone 15 Pro"
     user_context: Optional[str] = None
-    user_id: Optional[str] = None
     user_name: Optional[str] = None
     session_id: Optional[str] = None
 

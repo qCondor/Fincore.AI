@@ -1,10 +1,13 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useUser } from '../contexts/UserContext';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 export default function SplashScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const { userName, userEmail, authProvider, hasCompletedOnboarding, isLoading } = useUser();
 
@@ -69,7 +72,7 @@ export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#56CCF2', '#2F80ED', '#005FCC']}
+        colors={t.gradients.main}
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -123,7 +126,7 @@ export default function SplashScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
@@ -134,36 +137,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   fincoreText: {
-    fontSize: 52,
+    fontSize: t.type.displayHero,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: t.textPrimary,
     letterSpacing: -0.5,
   },
   aiText: {
-    fontSize: 52,
+    fontSize: t.type.displayHero,
     fontWeight: '700',
-    color: '#004FB0',
+    color: t.primaryDark,
     letterSpacing: -0.5,
     marginLeft: 6,
-    textShadowColor: 'rgba(0, 60, 160, 0.4)',
+    textShadowColor: t.textShadowBrand,
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
   tagline: {
     marginTop: 12,
-    fontSize: 15,
-    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: t.type.body,
+    color: t.textFaint,
   },
   divider: {
     width: 60,
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    backgroundColor: t.overlayMedium,
     marginTop: 16,
   },
   slogan: {
     marginTop: 12,
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.35)',
+    fontSize: t.type.bodySmall,
+    color: t.textGhost,
     letterSpacing: 3,
   },
 });

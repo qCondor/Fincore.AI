@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Line } from 'react-native-svg';
 import { API_BASE_URL } from '../config';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 interface ComingSoonModalProps {
   visible: boolean;
@@ -24,8 +25,9 @@ interface ComingSoonModalProps {
 }
 
 function XIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth={2} strokeLinecap="round">
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth={2} strokeLinecap="round">
       <Line x1={18} y1={6} x2={6} y2={18} />
       <Line x1={6} y1={6} x2={18} y2={18} />
     </Svg>
@@ -33,16 +35,18 @@ function XIcon() {
 }
 
 function SparklesIcon() {
+  const t = useTheme();
   return (
-    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="#00C2FF" strokeWidth={2}>
+    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={t.accent} strokeWidth={2}>
       <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
     </Svg>
   );
 }
 
 function BellIcon() {
+  const t = useTheme();
   return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#34C759" strokeWidth={2}>
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={t.success} strokeWidth={2}>
       <Path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <Path d="M13.73 21a2 2 0 01-3.46 0" />
     </Svg>
@@ -63,6 +67,8 @@ export function ComingSoonModal({
   featureKey,
   description,
 }: ComingSoonModalProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -100,7 +106,7 @@ export function ComingSoonModal({
     >
       <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
-          <BlurView intensity={8} tint="dark" style={StyleSheet.absoluteFill} />
+          <BlurView intensity={8} tint={t.blurTint} style={StyleSheet.absoluteFill} />
           <View style={styles.backdrop} />
         </View>
       </TouchableWithoutFeedback>
@@ -112,7 +118,7 @@ export function ComingSoonModal({
       >
         <TouchableWithoutFeedback>
           <View style={styles.modalCardOuter}>
-            <BlurView intensity={80} tint="dark" style={styles.modalCardBlur} />
+            <BlurView intensity={80} tint={t.blurTint} style={styles.modalCardBlur} />
             <View style={styles.modalCardInner}>
               <View style={styles.decorativeOrb} />
 
@@ -123,7 +129,7 @@ export function ComingSoonModal({
               <View style={styles.heroHeader}>
                 <View style={styles.iconContainer}>
                   <LinearGradient
-                    colors={['rgba(0,95,204,0.2)', 'rgba(0,194,255,0.2)']}
+                    colors={t.gradients.brandSheen}
                     style={styles.iconGradient}
                   >
                     <SparklesIcon />
@@ -164,7 +170,7 @@ export function ComingSoonModal({
                   value={email}
                   onChangeText={setEmail}
                   placeholder="Enter your email"
-                  placeholderTextColor="rgba(15, 42, 74, 0.45)"
+                  placeholderTextColor={t.authScrim}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -175,7 +181,7 @@ export function ComingSoonModal({
                   disabled={isSubmitting}
                 >
                   <LinearGradient
-                    colors={['#005FCC', '#00C2FF']}
+                    colors={t.gradients.avatar}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.submitGradient}
@@ -197,13 +203,13 @@ export function ComingSoonModal({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(4, 24, 51, 0.72)',
+    backgroundColor: t.scrimStrong,
   },
   centeredView: {
     flex: 1,
@@ -218,7 +224,7 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: t.overlayStrong,
   },
   modalCardBlur: {
     ...StyleSheet.absoluteFillObject,
@@ -226,7 +232,7 @@ const styles = StyleSheet.create({
   modalCardInner: {
     padding: 24,
     paddingTop: 28,
-    backgroundColor: 'rgba(248, 251, 255, 0.98)',
+    backgroundColor: t.sheet,
   },
   decorativeOrb: {
     position: 'absolute',
@@ -235,7 +241,7 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: 'rgba(0,194,255,0.15)',
+    backgroundColor: t.accentTintSubtle,
   },
   closeButton: {
     position: 'absolute',
@@ -244,7 +250,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -264,21 +270,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: t.overlayFaint,
   },
   title: {
-    fontSize: 22,
-    color: '#0F2A4A',
+    fontSize: t.type.titleLarge,
+    color: t.textOnLightHeading,
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: 8,
   },
   description: {
-    fontSize: 14,
-    color: '#4F627A',
+    fontSize: t.type.bodyCompact,
+    color: t.textOnLightMuted,
     textAlign: 'center',
     marginBottom: 12,
-    lineHeight: 20,
+    lineHeight: t.line.body,
   },
   pillContainer: {
     alignItems: 'center',
@@ -288,12 +294,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(0, 95, 204, 0.08)',
+    backgroundColor: t.primaryTintFaint,
   },
   pillText: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '600',
-    color: '#005FCC',
+    color: t.primaryOnSurface,
   },
   highlightsContainer: {
     marginBottom: 20,
@@ -309,13 +315,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#00C2FF',
+    backgroundColor: t.accent,
   },
   highlightText: {
     flex: 1,
-    fontSize: 13,
-    color: '#34506F',
-    lineHeight: 18,
+    fontSize: t.type.bodySmall,
+    color: t.textOnLightSubheading,
+    lineHeight: t.line.compact,
   },
   formContainer: {
     gap: 12,
@@ -324,11 +330,11 @@ const styles = StyleSheet.create({
     height: 48,
     paddingHorizontal: 16,
     borderRadius: 16,
-    backgroundColor: 'rgba(0, 95, 204, 0.05)',
+    backgroundColor: t.primaryTintHairline,
     borderWidth: 1,
-    borderColor: 'rgba(0, 95, 204, 0.16)',
-    color: '#0F2A4A',
-    fontSize: 15,
+    borderColor: t.primaryTintMediumAlt,
+    color: t.textOnLightHeading,
+    fontSize: t.type.body,
   },
   submitButton: {
     height: 48,
@@ -344,9 +350,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   submitText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
   successContainer: {
     alignItems: 'center',
@@ -356,24 +362,24 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(52,199,89,0.2)',
+    backgroundColor: t.successTintStrong,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
   },
   successTitle: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#0F2A4A',
+    color: t.textOnLightHeading,
   },
   successSubtitle: {
-    fontSize: 13,
-    color: '#4F627A',
+    fontSize: t.type.bodySmall,
+    color: t.textOnLightMuted,
     marginTop: 4,
   },
   comingDate: {
-    fontSize: 11,
-    color: 'rgba(15, 42, 74, 0.45)',
+    fontSize: t.type.captionSmall,
+    color: t.authScrim,
     textAlign: 'center',
     marginTop: 16,
   },

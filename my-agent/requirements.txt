@@ -7,3 +7,6 @@ httpx
 bcrypt
 slowapi
 langfuse
+python-jose[cryptography]
+google-auth
+requests

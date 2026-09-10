@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, forwardRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   BarChartIcon,
   ChevronRightIcon,
 } from './icons';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -40,7 +41,7 @@ interface BottomInputBarProps {
   disabled?: boolean;
 }
 
-export function BottomInputBar({
+export const BottomInputBar = forwardRef<TextInput, BottomInputBarProps>(function BottomInputBar({
   activeScreen,
   placeholder = 'Type a message...',
   value,
@@ -53,7 +54,9 @@ export function BottomInputBar({
   bottomInset,
   showMic = true,
   disabled = false,
-}: BottomInputBarProps) {
+}, ref) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const [inputFocused, setInputFocused] = useState(false);
   const [navVisible, setNavVisible] = useState(false);
   const navAnim = useRef(new Animated.Value(0)).current;
@@ -173,11 +176,12 @@ export function BottomInputBar({
             )}
             {!inputFocused && <View style={styles.spacer} />}
             <TextInput
+              ref={ref}
               style={styles.textInput}
               value={value}
               onChangeText={onChangeText}
               placeholder={placeholder}
-              placeholderTextColor="rgba(255,255,255,0.45)"
+              placeholderTextColor={t.textFaint}
               onFocus={() => setInputFocused(true)}
               onBlur={() => setInputFocused(false)}
               onSubmitEditing={handleSend}
@@ -201,15 +205,19 @@ export function BottomInputBar({
       </View>
     </View>
   );
-}
+});
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     paddingHorizontal: 16,
     paddingTop: 8,
+    zIndex: 20,
+    elevation: 20,
   },
   wrapper: {
-    height: 50,
+    // Sized by inputBarRow (normal flow) so larger text can grow it; the
+    // nav bar overlays it with absoluteFill. minHeight keeps Medium at 50.
+    minHeight: 50,
     position: 'relative',
   },
   navBar: {
@@ -217,11 +225,11 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 50,
+    bottom: 0,
     borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: t.overlayMedium,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -234,12 +242,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   navLabel: {
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.micro,
+    color: t.textFaint,
     marginTop: 2,
   },
   navLabelActive: {
-    color: '#fff',
+    color: t.textPrimary,
     fontWeight: '600',
   },
   navClose: {
@@ -252,10 +260,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   inputBarRow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -264,19 +268,19 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: t.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
   },
   inputBar: {
     flex: 1,
-    height: 50,
+    minHeight: 50,
     borderRadius: 32,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: t.overlayMedium,
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: 8,
@@ -295,8 +299,8 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    fontSize: 15,
-    color: '#fff',
+    fontSize: t.type.body,
+    color: t.textPrimary,
   },
   micButton: {
     width: 28,
@@ -309,7 +313,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,

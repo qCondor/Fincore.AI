@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ComingSoonModal } from '../components/ComingSoonModal';
 import { BackArrowIcon } from '../components/icons';
+import { WaveBackground } from '../components/WaveBackground';
+import { AnimatedScreen } from '../components/AnimatedScreen';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 const highlights = [
   'Trend spotting that matches your spending personality',
@@ -19,22 +21,19 @@ const bullets = [
 ];
 
 export default function AnalyticsScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#005FCC', '#34C759']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
+    <AnimatedScreen style={styles.container}>
+      <WaveBackground prefix="analytics" />
 
       <View style={[styles.header, { paddingTop: insets.top + 18 }]}> 
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <BackArrowIcon color="white" />
+          <BackArrowIcon color={t.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.title}>Analytics</Text>
       </View>
@@ -79,14 +78,14 @@ export default function AnalyticsScreen() {
         featureKey="analytics"
         description="Deep insights into your spending patterns, with personalised recommendations based on your OCEAN profile."
       />
-    </View>
+    </AnimatedScreen>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.background,
   },
   header: {
     flexDirection: 'row',
@@ -99,50 +98,50 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 21,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: t.overlayMedium,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   title: {
-    fontSize: 24,
+    fontSize: t.type.heading,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
   },
   content: {
     paddingHorizontal: 20,
   },
   heroCard: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: t.overlayFaint,
     borderRadius: 28,
     padding: 24,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: t.overlaySubtle,
   },
   heroHeadline: {
-    fontSize: 26,
+    fontSize: t.type.headingLarge,
     fontWeight: '800',
-    color: '#fff',
+    color: t.textPrimary,
     marginBottom: 12,
   },
   heroSubtext: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: 'rgba(255,255,255,0.9)',
+    fontSize: t.type.body,
+    lineHeight: t.line.relaxed,
+    color: t.textNear,
   },
   section: {
     marginBottom: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: t.overlayHairline,
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: t.overlaySubtle,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: t.type.bodyLarge,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     marginBottom: 12,
   },
   highlightRow: {
@@ -155,40 +154,40 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#00E0FF',
+    backgroundColor: t.accentBright,
     marginTop: 6,
   },
   highlightText: {
     flex: 1,
-    color: 'rgba(255,255,255,0.88)',
-    fontSize: 14,
-    lineHeight: 20,
+    color: t.surfaceRaised,
+    fontSize: t.type.bodyCompact,
+    lineHeight: t.line.body,
   },
   bulletRow: {
     marginBottom: 16,
   },
   bulletTitle: {
-    color: '#fff',
+    color: t.textPrimary,
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: t.type.body,
     marginBottom: 6,
   },
   bulletText: {
-    color: 'rgba(255,255,255,0.78)',
-    lineHeight: 20,
+    color: t.textTertiary,
+    lineHeight: t.line.body,
   },
   ctaButton: {
     marginTop: 10,
     height: 52,
     borderRadius: 28,
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 40,
   },
   ctaText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '700',
-    color: '#005FCC',
+    color: t.primaryOnSurface,
   },
 });

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
 
 interface SettingsSectionProps {
   title?: string;
@@ -9,6 +10,9 @@ interface SettingsSectionProps {
 }
 
 export function SettingsSection({ title, badge, locked, children }: SettingsSectionProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+
   return (
     <View style={styles.container}>
       {(title || badge) && (
@@ -22,7 +26,7 @@ export function SettingsSection({ title, badge, locked, children }: SettingsSect
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     marginBottom: 16,
   },
@@ -34,17 +38,17 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   title: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.6)',
+    color: t.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: t.overlayHairline,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: t.overlayFaint,
     overflow: 'hidden',
   },
   cardLocked: {

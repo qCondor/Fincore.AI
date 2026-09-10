@@ -1,11 +1,14 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useUser } from '../contexts/UserContext';
-import { API_BASE_URL } from '../config';
+import { apiPost } from '../lib/api';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 export default function ProcessingScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const params = useLocalSearchParams<{ answers?: string; userName?: string }>();
   const { userId, userName, setUserName } = useUser();
@@ -55,18 +58,12 @@ export default function ProcessingScreen() {
           const answers = JSON.parse(params.answers) as Array<{
             itemId: number; facet: string; domain: string; reverse: boolean; rating: number;
           }>;
-          const response = await fetch(`${API_BASE_URL}/score`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              user_id: userId,
-              name: params.userName || userName || 'User',
-              answers,
-            }),
+          const { data, error } = await apiPost<{ big_five: Record<string, number> }>('/score', {
+            name: params.userName || userName || 'User',
+            answers,
           });
 
-          if (response.ok) {
-            const data = await response.json();
+          if (!error && data) {
             // Pass scores to results screen
             router.replace({ pathname: '/results', params: { scores: JSON.stringify(data.big_five) } });
             return;
@@ -91,7 +88,7 @@ export default function ProcessingScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#56CCF2', '#2F80ED', '#005FCC']}
+        colors={t.gradients.main}
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -117,7 +114,7 @@ export default function ProcessingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -132,8 +129,8 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
-    borderTopColor: '#fff',
+    borderColor: t.overlayStrong,
+    borderTopColor: t.textPrimary,
     marginBottom: 32,
     alignItems: 'center',
     justifyContent: 'center',
@@ -142,18 +139,18 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
   },
   title: {
-    fontSize: 24,
+    fontSize: t.type.heading,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: t.type.body,
+    color: t.textMuted,
     textAlign: 'center',
   },
 });

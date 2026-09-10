@@ -5,8 +5,11 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
-    "scheme": "fincore",
+    "userInterfaceStyle": "automatic",
+    "scheme": [
+      "fincore",
+      "com.googleusercontent.apps.336431541348-hbifi1ohb2hsomhqqe2i289nm6oehdpg"
+    ],
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -40,7 +43,10 @@
       },
       "package": "com.fincore.app",
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -56,7 +62,14 @@
         }
       ],
       "expo-mail-composer",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -66,6 +79,12 @@
       "eas": {
         "projectId": "65e06576-a916-41a7-b142-62afe5282147"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/65e06576-a916-41a7-b142-62afe5282147"
     }
   }
 }

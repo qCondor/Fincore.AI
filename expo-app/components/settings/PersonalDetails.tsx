@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -6,7 +6,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { SettingsPage } from './SettingsPage';
 import { SettingsSection } from './SettingsSection';
-import { API_BASE_URL } from '../../config';
+import { apiPost, apiPatch } from '../../lib/api';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
 
 interface PersonalDetailsProps {
   onBack: () => void;
@@ -26,8 +27,9 @@ interface PersonalDetailsProps {
 }
 
 function UserIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
       <Circle cx={12} cy={7} r={4} />
     </Svg>
@@ -35,8 +37,9 @@ function UserIcon() {
 }
 
 function MailIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
       <Path d="M22 6l-10 7L2 6" />
     </Svg>
@@ -44,24 +47,27 @@ function MailIcon() {
 }
 
 function PhoneIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z" />
     </Svg>
   );
 }
 
 function CalendarIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M19 4H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2zM16 2v4M8 2v4M3 10h18" />
     </Svg>
   );
 }
 
 function MapPinIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
       <Circle cx={12} cy={10} r={3} />
     </Svg>
@@ -69,8 +75,9 @@ function MapPinIcon() {
 }
 
 function BriefcaseIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z" />
       <Path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />
     </Svg>
@@ -78,18 +85,20 @@ function BriefcaseIcon() {
 }
 
 function FlagIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
     </Svg>
   );
 }
 
 function CameraIcon() {
+  const t = useTheme();
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="white">
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill={t.textPrimary}>
       <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2v11z" />
-      <Circle cx={12} cy={13} r={4} fill="#005FCC" />
+      <Circle cx={12} cy={13} r={4} fill={t.primaryOnSurface} />
     </Svg>
   );
 }
@@ -105,6 +114,9 @@ interface EditableRowProps {
 }
 
 function EditableRow({ icon, label, value, onChangeText, isLast = false, keyboardType = 'default', editable = true }: EditableRowProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+
   return (
     <View style={[styles.row, !isLast && styles.rowBorder]}>
       <View style={styles.iconContainer}>{icon}</View>
@@ -114,7 +126,7 @@ function EditableRow({ icon, label, value, onChangeText, isLast = false, keyboar
           style={[styles.rowInput, !editable && styles.rowInputDisabled]}
           value={value}
           onChangeText={onChangeText}
-          placeholderTextColor="rgba(255,255,255,0.3)"
+          placeholderTextColor={t.overlayStrong}
           keyboardType={keyboardType}
           editable={editable}
         />
@@ -123,15 +135,10 @@ function EditableRow({ icon, label, value, onChangeText, isLast = false, keyboar
   );
 }
 
-// DEV TEST DATA - only for fields collected in intro tour
-const DEV_TEST_DATA = {
-  name: 'Quinn Condor',
-  email: 'quinncondor@gmail.com',
-  phone: '07777777777',
-  dob: '19/12/2000',
-};
-
 export function PersonalDetails({ onBack, initials, userId, profile, onProfileUpdate }: PersonalDetailsProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -145,14 +152,12 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Load profile data on mount - use test data as fallback for intro tour fields only
+  // Load profile data on mount - blank when not yet set, never a hardcoded fallback
   useEffect(() => {
-    // Intro tour fields - use test data as dev fallback
-    setFullName(profile?.name || DEV_TEST_DATA.name);
-    setEmail(profile?.email || DEV_TEST_DATA.email);
-    setPhone(profile?.phone || DEV_TEST_DATA.phone);
-    setDob(profile?.dob || DEV_TEST_DATA.dob);
-    // NOT collected in intro tour - only show if actually in profile, otherwise blank
+    setFullName(profile?.name ?? '');
+    setEmail(profile?.email ?? '');
+    setPhone(profile?.phone ?? '');
+    setDob(profile?.dob ?? '');
     setAddress(profile?.address ?? '');
     setOccupation(profile?.occupation ?? '');
     setNationality(profile?.nationality ?? '');
@@ -177,18 +182,12 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
           { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG, base64: true }
         );
 
-        const response = await fetch(`${API_BASE_URL}/profile/${userId}/photo`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: userId,
-            image_base64: manipulated.base64,
-            media_type: 'image/jpeg',
-          }),
+        const { data, error } = await apiPost<{ photo_url: string }>('/profile/photo', {
+          image_base64: manipulated.base64,
+          media_type: 'image/jpeg',
         });
 
-        if (response.ok) {
-          const data = await response.json();
+        if (!error && data) {
           setPhotoUrl(data.photo_url);
           onProfileUpdate?.();
         } else {
@@ -216,22 +215,17 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
     setSaveStatus('idle');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/profile/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userId,
-          name: fullName,
-          email: email,
-          phone: phone,
-          dob: dob,
-          address: address,
-          occupation: occupation,
-          nationality: nationality,
-        }),
+      const { error } = await apiPatch('/profile', {
+        name: fullName,
+        email: email,
+        phone: phone,
+        dob: dob,
+        address: address,
+        occupation: occupation,
+        nationality: nationality,
       });
 
-      if (response.ok) {
+      if (!error) {
         setSaveStatus('saved');
         setHasChanges(false);
         onProfileUpdate?.();
@@ -254,13 +248,13 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
           {photoUrl ? (
             <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
           ) : (
-            <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatar}>
+            <LinearGradient colors={t.gradients.avatar} style={styles.avatar}>
               <Text style={styles.avatarText}>{initials}</Text>
             </LinearGradient>
           )}
           <View style={styles.cameraBadge}>
             {isUploadingPhoto ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={t.textPrimary} />
             ) : (
               <CameraIcon />
             )}
@@ -328,7 +322,7 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
         disabled={isSaving || !hasChanges}
       >
         {isSaving ? (
-          <ActivityIndicator color="#fff" size="small" />
+          <ActivityIndicator color={t.textPrimary} size="small" />
         ) : (
           <Text style={styles.saveButtonText}>
             {saveStatus === 'saved' ? 'Saved!' : saveStatus === 'error' ? 'Try Again' : 'Save Changes'}
@@ -339,7 +333,7 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   avatarSection: {
     alignItems: 'center',
     marginBottom: 24,
@@ -355,19 +349,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: t.overlayStrong,
   },
   avatarImage: {
     width: 88,
     height: 88,
     borderRadius: 44,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: t.overlayStrong,
   },
   avatarText: {
-    fontSize: 28,
+    fontSize: t.type.headline,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
   },
   cameraBadge: {
     position: 'absolute',
@@ -376,11 +370,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: '#fff',
+    borderColor: t.textPrimary,
   },
   row: {
     flexDirection: 'row',
@@ -390,13 +384,13 @@ const styles = StyleSheet.create({
   },
   rowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: t.overlayHairline,
   },
   iconContainer: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -405,13 +399,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   rowLabel: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.captionSmall,
+    color: t.textFaint,
     marginBottom: 2,
   },
   rowInput: {
-    fontSize: 15,
-    color: '#fff',
+    fontSize: t.type.body,
+    color: t.textPrimary,
     padding: 0,
   },
   rowInputDisabled: {
@@ -419,28 +413,28 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     height: 54,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.primary,
     borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    shadowColor: 'rgba(0,95,204,0.4)',
+    shadowColor: t.primaryTintStrong,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 1,
     shadowRadius: 16,
   },
   saveButtonDisabled: {
-    backgroundColor: 'rgba(0,95,204,0.5)',
+    backgroundColor: t.primaryTintStronger,
   },
   saveButtonSuccess: {
-    backgroundColor: '#34C759',
+    backgroundColor: t.success,
   },
   saveButtonError: {
-    backgroundColor: '#FF453A',
+    backgroundColor: t.danger,
   },
   saveButtonText: {
-    fontSize: 16,
+    fontSize: t.type.bodyLarge,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
 });

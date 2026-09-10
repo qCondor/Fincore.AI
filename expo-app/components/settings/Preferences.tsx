@@ -1,123 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Haptics from 'expo-haptics';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
 import { SettingsPage } from './SettingsPage';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow } from './SettingsRow';
 import { SettingsToggle } from './SettingsToggle';
+import { OptionPickerModal, type PickerOption } from './OptionPickerModal';
+import { usePreferences, type ThemeMode, type DefaultHomeTab, type CurrencyCode, type DateFormatPref, type TextScale } from '../../contexts/PreferencesContext';
+import { useHaptics } from '../../lib/haptics';
+import { useSounds } from '../../lib/sounds';
+import { CURRENCY_SYMBOL } from '../../lib/format';
 
 interface PreferencesProps {
   onBack: () => void;
 }
 
-const PREFS_KEY = 'fincore_preferences';
-
-interface AppPreferences {
-  theme: 'Light' | 'Dark' | 'System';
-  hapticFeedback: boolean;
-  soundEffects: boolean;
-}
-
-const defaultPrefs: AppPreferences = {
-  theme: 'Light',
-  hapticFeedback: true,
-  soundEffects: true,
-};
-
 function SunIcon() {
+  const t = useTheme();
   return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Circle cx={12} cy={12} r={5} />
       <Path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
     </Svg>
   );
 }
 
-function TypeIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M4 7V4h16v3M9 20h6M12 4v16" />
-    </Svg>
-  );
-}
-
-function PoundIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M17 18H7a2 2 0 01-2-2V8a5 5 0 0110 0v2M5 12h8" />
-    </Svg>
-  );
-}
-
-function GlobeIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Circle cx={12} cy={12} r={10} />
-      <Path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" />
-    </Svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Rect x={3} y={4} width={18} height={18} rx={2} ry={2} />
-      <Path d="M16 2v4M8 2v4M3 10h18" />
-    </Svg>
-  );
-}
-
-function HomeIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-      <Path d="M9 22V12h6v10" />
-    </Svg>
-  );
-}
-
-function VibrationIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Rect x={5} y={2} width={14} height={20} rx={2} ry={2} />
-      <Path d="M1 9v6M23 9v6" />
-    </Svg>
-  );
-}
-
-function VolumeIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M11 5L6 9H2v6h4l5 4V5zM19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
-    </Svg>
-  );
-}
-
-function SparklesIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-    </Svg>
-  );
-}
-
-function MessageIcon() {
-  return (
-    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
-      <Path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-    </Svg>
-  );
-}
-
 interface SegmentedControlProps {
-  options: string[];
+  options: readonly string[];
   selected: string;
   onSelect: (option: string) => void;
 }
 
 function SegmentedControl({ options, selected, onSelect }: SegmentedControlProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+
   return (
     <View style={styles.segmentedControl}>
       {options.map((option) => (
@@ -136,74 +54,156 @@ function SegmentedControl({ options, selected, onSelect }: SegmentedControlProps
   );
 }
 
+function TextSizeIcon() {
+  const t = useTheme();
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
+      <Path d="M4 7V4h16v3M9 20h6M12 4v16" />
+    </Svg>
+  );
+}
+
+function PoundIcon() {
+  const t = useTheme();
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
+      <Path d="M17 18H7a2 2 0 01-2-2V8a5 5 0 0110 0v2M5 12h8" />
+    </Svg>
+  );
+}
+
+function CalendarIcon() {
+  const t = useTheme();
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
+      <Rect x={3} y={4} width={18} height={18} rx={2} ry={2} />
+      <Path d="M16 2v4M8 2v4M3 10h18" />
+    </Svg>
+  );
+}
+
+function HomeIcon() {
+  const t = useTheme();
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
+      <Path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+      <Path d="M9 22V12h6v10" />
+    </Svg>
+  );
+}
+
+function VibrationIcon() {
+  const t = useTheme();
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
+      <Rect x={5} y={2} width={14} height={20} rx={2} ry={2} />
+      <Path d="M1 9v6M23 9v6" />
+    </Svg>
+  );
+}
+
+function VolumeIcon() {
+  const t = useTheme();
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
+      <Path d="M11 5L6 9H2v6h4l5 4V5zM19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
+    </Svg>
+  );
+}
+
+const HOME_TAB_OPTIONS: PickerOption[] = [
+  { value: 'index', label: 'Feels Like' },
+  { value: 'faith', label: 'Faith' },
+  { value: 'profile', label: 'Profile' },
+];
+
+const HOME_TAB_LABELS: Record<DefaultHomeTab, string> = {
+  index: 'Feels Like',
+  faith: 'Faith',
+  profile: 'Profile',
+};
+
+const CURRENCY_OPTIONS: PickerOption[] = [
+  { value: 'GBP', label: 'British Pound', description: '£ GBP' },
+  { value: 'USD', label: 'US Dollar', description: '$ USD' },
+  { value: 'EUR', label: 'Euro', description: '€ EUR' },
+];
+
+const DATE_FORMAT_OPTIONS: PickerOption[] = [
+  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY', description: '31/12/2026' },
+  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY', description: '12/31/2026' },
+  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD', description: '2026-12-31' },
+];
+
+const THEME_OPTIONS = ['Light', 'Dark', 'System'] as const;
+
+const TEXT_SIZE_OPTIONS: PickerOption[] = [
+  { value: 'Small', label: 'Small', description: 'Slightly more compact' },
+  { value: 'Medium', label: 'Medium', description: 'Default' },
+  { value: 'Large', label: 'Large', description: 'Easier to read' },
+];
+
 export function Preferences({ onBack }: PreferencesProps) {
-  const [theme, setTheme] = useState<'Light' | 'Dark' | 'System'>('Light');
-  const [hapticFeedback, setHapticFeedback] = useState(true);
-  const [soundEffects, setSoundEffects] = useState(true);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const { prefs, isLoaded, updatePref } = usePreferences();
+  const haptics = useHaptics();
+  const sounds = useSounds();
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
 
-  // Load preferences on mount
-  useEffect(() => {
-    const loadPrefs = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(PREFS_KEY);
-        if (stored) {
-          const prefs: AppPreferences = JSON.parse(stored);
-          setTheme(prefs.theme);
-          setHapticFeedback(prefs.hapticFeedback);
-          setSoundEffects(prefs.soundEffects);
-        }
-      } catch (e) {
-        console.error('Failed to load preferences:', e);
-      } finally {
-        setIsLoaded(true);
-      }
-    };
-    loadPrefs();
-  }, []);
+  const [textSizePickerOpen, setTextSizePickerOpen] = useState(false);
+  const [homeTabPickerOpen, setHomeTabPickerOpen] = useState(false);
+  const [currencyPickerOpen, setCurrencyPickerOpen] = useState(false);
+  const [dateFormatPickerOpen, setDateFormatPickerOpen] = useState(false);
 
-  // Save preferences on change
-  const savePrefs = async (newPrefs: Partial<AppPreferences>) => {
-    const prefs: AppPreferences = {
-      theme,
-      hapticFeedback,
-      soundEffects,
-      ...newPrefs,
-    };
-    try {
-      await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-    } catch (e) {
-      console.error('Failed to save preferences:', e);
-    }
+  const handleThemeChange = (value: string) => {
+    updatePref('theme', value as ThemeMode);
+    haptics.impact();
   };
 
-  const handleThemeChange = (newTheme: string) => {
-    const t = newTheme as 'Light' | 'Dark' | 'System';
-    setTheme(t);
-    savePrefs({ theme: t });
-    if (hapticFeedback) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+  const handleTextSizeSelect = (value: string) => {
+    updatePref('textScale', value as TextScale);
+    haptics.impact();
+    setTextSizePickerOpen(false);
   };
 
   const handleHapticChange = (value: boolean) => {
-    setHapticFeedback(value);
-    savePrefs({ hapticFeedback: value });
+    updatePref('hapticFeedback', value);
+    // Fire unconditionally on enable so the user feels the confirmation --
+    // gating this one on the pref itself would mean it never fires.
     if (value) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      haptics.impact();
     }
   };
 
   const handleSoundChange = (value: boolean) => {
-    setSoundEffects(value);
-    savePrefs({ soundEffects: value });
-    if (hapticFeedback) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    updatePref('soundEffects', value);
+    // Same as haptics: on enable, the pref is still false when the toggle
+    // fires, so force the confirmation click through the gate.
+    if (value) {
+      sounds.playToggle({ force: true });
     }
   };
 
+  const handleHomeTabSelect = (value: string) => {
+    updatePref('defaultHomeTab', value as DefaultHomeTab);
+    haptics.impact();
+    setHomeTabPickerOpen(false);
+  };
+
+  const handleCurrencySelect = (value: string) => {
+    updatePref('currency', value as CurrencyCode);
+    haptics.impact();
+    setCurrencyPickerOpen(false);
+  };
+
+  const handleDateFormatSelect = (value: string) => {
+    updatePref('dateFormat', value as DateFormatPref);
+    haptics.impact();
+    setDateFormatPickerOpen(false);
+  };
+
   if (!isLoaded) {
-    return null; // Or a loading spinner
+    return null;
   }
 
   return (
@@ -215,43 +215,101 @@ export function Preferences({ onBack }: PreferencesProps) {
             <Text style={styles.themeLabelText}>Theme</Text>
           </View>
           <SegmentedControl
-            options={['Light', 'Dark', 'System']}
-            selected={theme}
+            options={THEME_OPTIONS}
+            selected={prefs.theme}
             onSelect={handleThemeChange}
           />
         </View>
-        <SettingsRow icon={<TypeIcon />} label="Text Size" value="Medium" onPress={() => {}} isLast />
+        <SettingsRow
+          icon={<TextSizeIcon />}
+          label="Text Size"
+          value={prefs.textScale}
+          onPress={() => setTextSizePickerOpen(true)}
+          isLast
+        />
       </SettingsSection>
 
       <SettingsSection title="Regional">
-        <SettingsRow icon={<PoundIcon />} label="Currency" value="GBP £" onPress={() => {}} />
-        <SettingsRow icon={<GlobeIcon />} label="Language" value="English (UK)" onPress={() => {}} />
-        <SettingsRow icon={<CalendarIcon />} label="Date Format" value="DD/MM/YYYY" onPress={() => {}} isLast />
+        <SettingsRow
+          icon={<PoundIcon />}
+          label="Currency"
+          value={`${prefs.currency} ${CURRENCY_SYMBOL[prefs.currency]}`}
+          onPress={() => setCurrencyPickerOpen(true)}
+        />
+        <SettingsRow
+          icon={<CalendarIcon />}
+          label="Date Format"
+          value={prefs.dateFormat}
+          onPress={() => setDateFormatPickerOpen(true)}
+          isLast
+        />
       </SettingsSection>
 
       <SettingsSection title="App">
-        <SettingsRow icon={<HomeIcon />} label="Default Home Tab" value="Feels Like" onPress={() => {}} />
-        <SettingsToggle icon={<VibrationIcon />} label="Haptic Feedback" value={hapticFeedback} onValueChange={handleHapticChange} />
-        <SettingsToggle icon={<VolumeIcon />} label="Sound Effects" value={soundEffects} onValueChange={handleSoundChange} isLast />
+        <SettingsRow
+          icon={<HomeIcon />}
+          label="Default Home Tab"
+          value={HOME_TAB_LABELS[prefs.defaultHomeTab]}
+          onPress={() => setHomeTabPickerOpen(true)}
+        />
+        <SettingsToggle
+          icon={<VibrationIcon />}
+          label="Haptic Feedback"
+          value={prefs.hapticFeedback}
+          onValueChange={handleHapticChange}
+        />
+        <SettingsToggle
+          icon={<VolumeIcon />}
+          label="Sound Effects"
+          value={prefs.soundEffects}
+          onValueChange={handleSoundChange}
+          isLast
+        />
       </SettingsSection>
 
-      <SettingsSection title="Faith AI">
-        <SettingsRow icon={<SparklesIcon />} label="Nudge Frequency" value="Balanced" onPress={() => {}} />
-        <SettingsRow icon={<MessageIcon />} label="Tone" value="Gentle" onPress={() => {}} isLast />
-      </SettingsSection>
+      <OptionPickerModal
+        visible={textSizePickerOpen}
+        title="Text Size"
+        options={TEXT_SIZE_OPTIONS}
+        selected={prefs.textScale}
+        onSelect={handleTextSizeSelect}
+        onClose={() => setTextSizePickerOpen(false)}
+      />
+      <OptionPickerModal
+        visible={homeTabPickerOpen}
+        title="Default Home Tab"
+        options={HOME_TAB_OPTIONS}
+        selected={prefs.defaultHomeTab}
+        onSelect={handleHomeTabSelect}
+        onClose={() => setHomeTabPickerOpen(false)}
+      />
+      <OptionPickerModal
+        visible={currencyPickerOpen}
+        title="Currency"
+        options={CURRENCY_OPTIONS}
+        selected={prefs.currency}
+        onSelect={handleCurrencySelect}
+        onClose={() => setCurrencyPickerOpen(false)}
+      />
+      <OptionPickerModal
+        visible={dateFormatPickerOpen}
+        title="Date Format"
+        options={DATE_FORMAT_OPTIONS}
+        selected={prefs.dateFormat}
+        onSelect={handleDateFormatSelect}
+        onClose={() => setDateFormatPickerOpen(false)}
+      />
     </SettingsPage>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   themeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   themeLabel: {
     flexDirection: 'row',
@@ -261,18 +319,18 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   themeLabelText: {
-    fontSize: 15,
-    color: '#fff',
+    fontSize: t.type.body,
+    color: t.textPrimary,
   },
   segmentedControl: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     borderRadius: 8,
     padding: 2,
   },
@@ -282,14 +340,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   segmentSelected: {
-    backgroundColor: '#005FCC',
+    backgroundColor: t.primary,
   },
   segmentText: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '500',
-    color: 'rgba(255,255,255,0.6)',
+    color: t.textMuted,
   },
   segmentTextSelected: {
-    color: '#fff',
+    color: t.textPrimary,
   },
 });

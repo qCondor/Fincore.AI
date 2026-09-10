@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiPost, apiFetch } from '../lib/api';
+import { formatCurrency } from '../lib/format';
 
 const NOTIFICATIONS_KEY = 'fincore_notifications';
 
@@ -114,7 +115,6 @@ export function NotificationProvider({ children, userId }: NotificationProviderP
 
       if (userId && token) {
         await apiPost('/users/push-token', {
-          user_id: userId,
           push_token: token,
           platform: Platform.OS,
           device_name: Device.modelName || 'Unknown',
@@ -200,7 +200,6 @@ export function NotificationProvider({ children, userId }: NotificationProviderP
 
       if (userId) {
         await apiPost('/users/notification-prefs', {
-          user_id: userId,
           prefs: newPrefs,
         });
       }
@@ -311,7 +310,7 @@ export async function sendSpendingAlert(amount: number, category: string) {
   return await Notifications.scheduleNotificationAsync({
     content: {
       title: '⚠️ Spending Alert',
-      body: `You've spent £${amount.toFixed(2)} on ${category} today. Want to review with Faith?`,
+      body: `You've spent ${formatCurrency(amount)} on ${category} today. Want to review with Faith?`,
       data: { screen: 'faith', type: 'spending_alert', amount, category },
     },
     trigger: null,

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { apiPost } from '../lib/api';
+import { loadSessionToken, setSessionToken, clearSessionToken } from '../lib/session';
 
 const USER_ID_KEY = 'fincore_user_id';
 const USER_NAME_KEY = 'fincore_user_name';
@@ -9,6 +10,11 @@ const USER_EMAIL_KEY = 'fincore_user_email';
 const ONBOARDING_COMPLETED_KEY = 'fincore_onboarding_completed';
 
 type AuthProvider = 'anonymous' | 'google' | 'apple' | 'microsoft';
+
+interface ProviderAuthResponse {
+  user_id: string;
+  session_token: string;
+}
 
 interface UserContextValue {
   userId: string | null;
@@ -22,13 +28,26 @@ interface UserContextValue {
   setAuthProvider: (provider: AuthProvider) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   clearUser: () => Promise<void>;
+  /**
+   * Verifies a Sign-In-with-{provider} identity token server-side and
+   * establishes a real session. userId is derived entirely from the
+   * provider's verified subject claim -- the client never picks it.
+   */
+  authenticateWithProvider: (
+    provider: 'apple' | 'google' | 'microsoft',
+    identityToken?: string | null,
+    authorizationCode?: string | null
+  ) => Promise<boolean>;
+  /**
+   * TEMP (2026-09-10): dev-only bypass. Obtains a real server-signed session
+   * for a fixed test user from the backend's /auth/dev endpoint, which only
+   * exists when the server runs with ENVIRONMENT=development. Guarded by
+   * __DEV__ so it is a no-op in release/TestFlight builds.
+   */
+  authenticateAsDevUser: () => Promise<boolean>;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
-
-function generateUserId(): string {
-  return `user_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
@@ -41,18 +60,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        let storedUserId = await SecureStore.getItemAsync(USER_ID_KEY);
-        let storedUserName = await SecureStore.getItemAsync(USER_NAME_KEY);
-        let storedEmail = await SecureStore.getItemAsync(USER_EMAIL_KEY);
+        // Load the session token first -- apiFetch reads it synchronously
+        // from the in-memory cache, so it must be hydrated before any
+        // authenticated request can go out.
+        const storedSessionToken = await loadSessionToken();
+        const storedUserId = await SecureStore.getItemAsync(USER_ID_KEY);
+        const storedUserName = await SecureStore.getItemAsync(USER_NAME_KEY);
+        const storedEmail = await SecureStore.getItemAsync(USER_EMAIL_KEY);
         const storedProvider = await SecureStore.getItemAsync(AUTH_PROVIDER_KEY);
         const storedOnboarding = await SecureStore.getItemAsync(ONBOARDING_COMPLETED_KEY);
 
-        if (!storedUserId) {
-          storedUserId = generateUserId();
-          await SecureStore.setItemAsync(USER_ID_KEY, storedUserId);
-        }
-
-        setUserId(storedUserId);
+        // Only trust a stored userId if it has a session token to back it --
+        // a userId with no verified session is not a logged-in user.
+        setUserId(storedSessionToken ? storedUserId : null);
         setUserNameState(storedUserName);
         setUserEmailState(storedEmail);
         setHasCompletedOnboarding(storedOnboarding === 'true');
@@ -61,8 +81,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (error) {
         console.error('Failed to load user:', error);
-        const fallbackId = generateUserId();
-        setUserId(fallbackId);
       } finally {
         setIsLoading(false);
       }
@@ -109,19 +127,63 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
   const clearUser = async () => {
     try {
-      const newUserId = generateUserId();
-      await SecureStore.setItemAsync(USER_ID_KEY, newUserId);
+      await SecureStore.deleteItemAsync(USER_ID_KEY);
       await SecureStore.deleteItemAsync(USER_NAME_KEY);
       await SecureStore.deleteItemAsync(USER_EMAIL_KEY);
       await SecureStore.deleteItemAsync(ONBOARDING_COMPLETED_KEY);
       await SecureStore.setItemAsync(AUTH_PROVIDER_KEY, 'anonymous');
-      setUserId(newUserId);
+      await clearSessionToken();
+      setUserId(null);
       setUserNameState(null);
       setUserEmailState(null);
       setHasCompletedOnboarding(false);
       setAuthProviderState('anonymous');
     } catch (error) {
       console.error('Failed to clear user:', error);
+    }
+  };
+
+  const authenticateWithProvider = async (
+    provider: 'apple' | 'google' | 'microsoft',
+    identityToken?: string | null,
+    authorizationCode?: string | null
+  ): Promise<boolean> => {
+    try {
+      const { data, error } = await apiPost<ProviderAuthResponse>(`/auth/${provider}`, {
+        identity_token: identityToken ?? null,
+        authorization_code: authorizationCode ?? null,
+      });
+
+      if (error || !data) {
+        console.error('Provider authentication failed:', error);
+        return false;
+      }
+
+      await SecureStore.setItemAsync(USER_ID_KEY, data.user_id);
+      await setSessionToken(data.session_token);
+      setUserId(data.user_id);
+      return true;
+    } catch (error) {
+      console.error('Provider authentication failed:', error);
+      return false;
+    }
+  };
+
+  const authenticateAsDevUser = async (): Promise<boolean> => {
+    if (!__DEV__) return false;
+    try {
+      const { data, error } = await apiPost<ProviderAuthResponse>('/auth/dev', {});
+      if (error || !data) {
+        console.error('Dev authentication failed:', error);
+        return false;
+      }
+      await SecureStore.setItemAsync(USER_ID_KEY, data.user_id);
+      await setSessionToken(data.session_token);
+      setUserId(data.user_id);
+      return true;
+    } catch (error) {
+      console.error('Dev authentication failed:', error);
+      return false;
     }
   };
 
@@ -136,6 +198,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setUserName,
       setUserEmail,
       setAuthProvider,
+      authenticateWithProvider,
+      authenticateAsDevUser,
       completeOnboarding,
       clearUser,
     }}>

@@ -103,7 +103,6 @@ export function useScan({ userId }: UseScanOptions = {}): UseScanReturn {
         const { data, error: fetchError } = await apiPost<AnalyzeResponse>('/analyze', {
           image_base64: base64,
           media_type: 'image/jpeg',
-          user_id: userId,
         });
 
         if (fetchError || !data?.success) {
@@ -127,7 +126,6 @@ export function useScan({ userId }: UseScanOptions = {}): UseScanReturn {
         if (data.scan_id && userId) {
           apiPost('/upload-scan-image', {
             image_base64: base64,
-            user_id: userId,
             scan_id: data.scan_id,
           }).catch(() => {});
         }
@@ -188,7 +186,6 @@ export function useScan({ userId }: UseScanOptions = {}): UseScanReturn {
       try {
         const { data, error: fetchError } = await apiPost<AnalyzeResponse>('/analyze-text', {
           product_description: productDescription,
-          user_id: userId,
         });
 
         if (fetchError || !data?.success) {
@@ -218,7 +215,6 @@ export function useScan({ userId }: UseScanOptions = {}): UseScanReturn {
   const fetchPsychologyCost = useCallback(
     async (basePrice: number): Promise<PsychologyCost | null> => {
       const { data } = await apiPost<PsychologyCost>('/psychology-cost', {
-        user_id: userId,
         base_price: basePrice,
       });
 

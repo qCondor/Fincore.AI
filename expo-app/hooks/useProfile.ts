@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { apiFetch } from '../lib/api';
 
 export interface Profile {
+  user_id?: string;
   name: string | null;
   email: string | null;
   phone: string | null;
@@ -51,10 +52,18 @@ export function useProfile({
     setIsLoading(true);
     setError(null);
 
-    const { data, error: fetchError } = await apiFetch<Profile>(`/profile/${userId}`);
+    const { data, error: fetchError } = await apiFetch<Profile>('/profile');
 
     if (fetchError) {
       setError(fetchError);
+    } else if (data?.user_id && data.user_id !== userId) {
+      // Regression guard: the server derives user_id from the verified session
+      // token, so this should be structurally impossible -- but if a stale
+      // userId and a session token for a different account ever desync
+      // client-side, never show the mismatched profile.
+      console.error(`Profile mismatch: expected ${userId}, got ${data.user_id}`);
+      setError('Profile mismatch');
+      setProfile(null);
     } else {
       setProfile(data);
     }
@@ -67,7 +76,7 @@ export function useProfile({
       return { success: false, error: 'No user ID' };
     }
 
-    const { error: deleteError } = await apiFetch(`/users/${userId}`, { method: 'DELETE' });
+    const { error: deleteError } = await apiFetch('/users/me', { method: 'DELETE' });
 
     if (deleteError) {
       return { success: false, error: deleteError };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text, TextProps } from 'react-native';
 import { useSecurity } from '../contexts/SecurityContext';
+import { formatCurrency } from '../lib/format';
 
 interface MaskedTextProps extends TextProps {
   children: React.ReactNode;
@@ -26,6 +27,6 @@ export function MaskedAmount({ amount, style, ...props }: { amount: string | num
     return <Text style={style} {...props}>••••</Text>;
   }
 
-  const formatted = typeof amount === 'number' ? `£${amount.toFixed(2)}` : amount;
+  const formatted = typeof amount === 'number' ? formatCurrency(amount) : amount;
   return <Text style={style} {...props}>{formatted}</Text>;
 }

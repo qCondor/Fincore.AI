@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useUser } from '../contexts/UserContext';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 const validateEmail = (email: string): boolean => {
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -46,6 +47,8 @@ const validateDOB = (dob: string): boolean => {
 };
 
 export default function InfoScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { setUserName, setUserEmail } = useUser();
@@ -107,7 +110,7 @@ export default function InfoScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#56CCF2', '#2F80ED', '#005FCC']}
+        colors={t.gradients.main}
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -131,7 +134,7 @@ export default function InfoScreen() {
               <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                 <Path
                   d="M19 12H5M5 12L12 19M5 12L12 5"
-                  stroke="white"
+                  stroke={t.textPrimary}
                   strokeWidth={2}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -153,7 +156,7 @@ export default function InfoScreen() {
                 value={name}
                 onChangeText={(t) => { setName(t); if (errors.name) setErrors({ ...errors, name: '' }); }}
                 placeholder="e.g. Jordan Smith"
-                placeholderTextColor="#999"
+                placeholderTextColor={t.textOnSurfaceSubtle}
                 autoCapitalize="words"
               />
               {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
@@ -166,7 +169,7 @@ export default function InfoScreen() {
                 value={dob}
                 onChangeText={handleDOBChange}
                 placeholder="DD/MM/YYYY"
-                placeholderTextColor="#999"
+                placeholderTextColor={t.textOnSurfaceSubtle}
                 keyboardType="number-pad"
                 maxLength={10}
               />
@@ -180,7 +183,7 @@ export default function InfoScreen() {
                 value={email}
                 onChangeText={(t) => { setEmail(t); if (errors.email) setErrors({ ...errors, email: '' }); }}
                 placeholder="you@email.com"
-                placeholderTextColor="#999"
+                placeholderTextColor={t.textOnSurfaceSubtle}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -195,7 +198,7 @@ export default function InfoScreen() {
                 value={phone}
                 onChangeText={(t) => { setPhone(t); if (errors.phone) setErrors({ ...errors, phone: '' }); }}
                 placeholder="+44 7XXX XXXXXX"
-                placeholderTextColor="#999"
+                placeholderTextColor={t.textOnSurfaceSubtle}
                 keyboardType="phone-pad"
               />
               {errors.phone && <Text style={styles.errorText}>{errors.phone}</Text>}
@@ -218,7 +221,7 @@ export default function InfoScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -248,75 +251,75 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 28,
+    fontSize: t.type.headline,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.caption,
+    color: t.textFaint,
     marginTop: 2,
   },
   formCard: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: t.surfaceCard,
     borderRadius: 28,
     padding: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: t.overlayBorder,
   },
   inputGroup: {
     marginBottom: 18,
   },
   label: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '600',
-    color: '#666',
+    color: t.textOnSurfaceSecondary,
     marginBottom: 6,
   },
   input: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: t.surfaceNeutralAlt,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
+    borderColor: t.shadowSoft,
     borderRadius: 32,
     paddingHorizontal: 18,
     paddingVertical: 15,
-    fontSize: 16,
-    color: '#1a1a1a',
+    fontSize: t.type.bodyLarge,
+    color: t.textOnSurface,
   },
   inputError: {
-    borderColor: '#FF3B30',
+    borderColor: t.dangerStrong,
     borderWidth: 1.5,
   },
   errorText: {
-    color: '#FF3B30',
-    fontSize: 12,
+    color: t.dangerStrong,
+    fontSize: t.type.caption,
     marginTop: 4,
     marginLeft: 18,
   },
   continueButton: {
     marginTop: 20,
     height: 50,
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: t.shadowBase,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
   },
   continueButtonText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#2F80ED',
+    color: t.secondary,
   },
   continueButtonDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: t.textGhost,
     shadowOpacity: 0,
   },
   continueButtonTextDisabled: {
-    color: 'rgba(47,128,237,0.5)',
+    color: t.secondaryTintStrong,
   },
 });

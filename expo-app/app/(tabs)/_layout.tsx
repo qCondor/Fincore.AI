@@ -1,11 +1,20 @@
 import { Tabs, useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useUser } from '../../contexts/UserContext';
+import { usePreferences } from '../../contexts/PreferencesContext';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
+
+const HOME_TAB_ROUTES: Record<string, string> = {
+  index: '/',
+  faith: '/faith',
+  profile: '/profile',
+};
 
 function ScanIcon({ focused }: { focused: boolean }) {
-  const color = focused ? '#2F80ED' : '#999';
+  const t = useTheme();
+  const color = focused ? t.secondary : t.iconInactive;
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path
@@ -20,7 +29,8 @@ function ScanIcon({ focused }: { focused: boolean }) {
 }
 
 function FaithIcon({ focused }: { focused: boolean }) {
-  const color = focused ? '#2F80ED' : '#999';
+  const t = useTheme();
+  const color = focused ? t.secondary : t.iconInactive;
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path
@@ -35,7 +45,8 @@ function FaithIcon({ focused }: { focused: boolean }) {
 }
 
 function ProfileIcon({ focused }: { focused: boolean }) {
-  const color = focused ? '#2F80ED' : '#999';
+  const t = useTheme();
+  const color = focused ? t.secondary : t.iconInactive;
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path
@@ -57,20 +68,39 @@ function ProfileIcon({ focused }: { focused: boolean }) {
 }
 
 export default function TabsLayout() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const { userName, userEmail, authProvider, hasCompletedOnboarding, isLoading } = useUser();
+  const { prefs, isLoaded: prefsLoaded } = usePreferences();
+  const hasAppliedDefaultTab = useRef(false);
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !prefsLoaded) return;
 
     const hasStartedOnboarding = Boolean(userName || userEmail || authProvider !== 'anonymous');
 
     if (!hasStartedOnboarding) {
       router.replace('/login');
-    } else if (!hasCompletedOnboarding) {
-      router.replace('/info');
+      return;
     }
-  }, [isLoading, userName, userEmail, authProvider, hasCompletedOnboarding, router]);
+
+    if (!hasCompletedOnboarding) {
+      router.replace('/info');
+      return;
+    }
+
+    // Only redirect to the preferred tab once per cold start -- never on
+    // later re-renders (e.g. foregrounding the app) once the user may
+    // have already navigated elsewhere themselves.
+    if (!hasAppliedDefaultTab.current) {
+      hasAppliedDefaultTab.current = true;
+      const targetRoute = HOME_TAB_ROUTES[prefs.defaultHomeTab];
+      if (targetRoute && targetRoute !== '/') {
+        router.replace(targetRoute as any);
+      }
+    }
+  }, [isLoading, prefsLoaded, userName, userEmail, authProvider, hasCompletedOnboarding, prefs.defaultHomeTab, router]);
 
   return (
     <Tabs
@@ -104,4 +134,4 @@ export default function TabsLayout() {
   );
 }
 
-const styles = StyleSheet.create({});
+const makeStyles = (t: Theme) => StyleSheet.create({});

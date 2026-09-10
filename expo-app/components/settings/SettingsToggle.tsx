@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, Switch, Platform } from 'react-native';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
+import { useSounds } from '../../lib/sounds';
 
 interface SettingsToggleProps {
   icon: React.ReactNode;
@@ -11,23 +13,32 @@ interface SettingsToggleProps {
 }
 
 export function SettingsToggle({ icon, label, value, onValueChange, isLast = false, disabled = false }: SettingsToggleProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const sounds = useSounds();
+
+  const handleValueChange = (next: boolean) => {
+    sounds.playToggle();
+    onValueChange(next);
+  };
+
   return (
     <View style={[styles.container, !isLast && styles.border, disabled && styles.disabled]}>
       <View style={[styles.iconContainer, disabled && styles.iconDisabled]}>{icon}</View>
       <Text style={[styles.label, disabled && styles.labelDisabled]}>{label}</Text>
       <Switch
         value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#34C759' }}
-        thumbColor="#fff"
-        ios_backgroundColor="rgba(255,255,255,0.2)"
+        onValueChange={handleValueChange}
+        trackColor={{ false: t.overlayMedium, true: t.success }}
+        thumbColor={t.textPrimary}
+        ios_backgroundColor={t.overlayMedium}
         disabled={disabled}
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -36,21 +47,21 @@ const styles = StyleSheet.create({
   },
   border: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: t.overlayHairline,
   },
   iconContainer: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   label: {
     flex: 1,
-    fontSize: 15,
-    color: '#fff',
+    fontSize: t.type.body,
+    color: t.textPrimary,
   },
   disabled: {
     opacity: 0.5,

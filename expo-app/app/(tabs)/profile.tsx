@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -41,16 +41,9 @@ import { WaveBackground } from '../../components/WaveBackground';
 import { BottomInputBar } from '../../components/BottomInputBar';
 import { AnimatedScreen } from '../../components/AnimatedScreen';
 import { traitMetadata } from '../../lib/traits';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const traitColors: Record<string, { from: string; to: string }> = {
-  Openness: { from: '#005FCC', to: '#00C2FF' },
-  Conscientiousness: { from: '#34C759', to: '#30D158' },
-  Extraversion: { from: '#FF9F0A', to: '#FECA57' },
-  Agreeableness: { from: '#FF3B30', to: '#FF6B6B' },
-  Neuroticism: { from: '#5AC8FA', to: '#007AFF' },
-};
 
 function buildOceanTraits(bigFive: Record<string, number> | null) {
   const defaultScores: Record<string, number> = { openness: 50, conscientiousness: 50, extraversion: 50, agreeableness: 50, neuroticism: 50 };
@@ -76,6 +69,7 @@ function buildOceanTraits(bigFive: Record<string, number> | null) {
 }
 
 function ChevronDownIcon({ rotated }: { rotated: boolean }) {
+  const t = useTheme();
   return (
     <Svg
       width={12}
@@ -84,16 +78,17 @@ function ChevronDownIcon({ rotated }: { rotated: boolean }) {
       fill="none"
       style={{ transform: [{ rotate: rotated ? '180deg' : '0deg' }] }}
     >
-      <Path d="M6 9l6 6 6-6" stroke="#005FCC" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M6 9l6 6 6-6" stroke={t.primaryOnSurface} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
 
 function LockIcon({ size = 48 }: { size?: number }) {
+  const t = useTheme();
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="#005FCC">
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={t.primaryOnSurface}>
       <Path d="M19 11H5a2 2 0 00-2 2v7a2 2 0 002 2h14a2 2 0 002-2v-7a2 2 0 00-2-2z" />
-      <Path d="M7 11V7a5 5 0 0110 0v4" stroke="#005FCC" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Path d="M7 11V7a5 5 0 0110 0v4" stroke={t.primaryOnSurface} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </Svg>
   );
 }
@@ -107,6 +102,8 @@ function CheckIcon({ color }: { color: string }) {
 }
 
 export default function ProfileScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ openSettings?: string }>();
@@ -214,7 +211,7 @@ export default function ProfileScreen() {
             {profile?.photo_url ? (
               <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
             ) : (
-              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
+              <LinearGradient colors={t.gradients.avatar} style={styles.avatarGradient}>
                 <View style={styles.avatarShine} />
                 <Text style={styles.avatarText}>{initials}</Text>
               </LinearGradient>
@@ -259,15 +256,15 @@ export default function ProfileScreen() {
 
             {/* OCEAN Traits card */}
             <View style={styles.card}>
-              {oceanTraits.map((t, index) => {
-                const colors = traitColors[t.trait];
-                const isExpanded = expandedTraits.has(t.trait);
+              {oceanTraits.map((trait, index) => {
+                const colors = t.traitGradients[trait.trait];
+                const isExpanded = expandedTraits.has(trait.trait);
                 const isLast = index === oceanTraits.length - 1;
 
                 return (
                   <TouchableOpacity
-                    key={t.trait}
-                    onPress={() => toggleTrait(t.trait)}
+                    key={trait.trait}
+                    onPress={() => toggleTrait(trait.trait)}
                     style={[styles.traitItem, !isLast && { marginBottom: 18 }]}
                     activeOpacity={0.8}
                   >
@@ -279,11 +276,11 @@ export default function ProfileScreen() {
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                         >
-                          <Text style={styles.traitLetter}>{t.letter}</Text>
+                          <Text style={styles.traitLetter}>{trait.letter}</Text>
                         </LinearGradient>
-                        <Text style={styles.traitName}>{t.trait}</Text>
+                        <Text style={styles.traitName}>{trait.trait}</Text>
                       </View>
-                      <Text style={styles.traitScore}>{t.score}th</Text>
+                      <Text style={styles.traitScore}>{trait.score}th</Text>
                     </View>
 
                     <View style={styles.traitBarBg}>
@@ -291,7 +288,7 @@ export default function ProfileScreen() {
                         colors={[colors.from, colors.to]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
-                        style={[styles.traitBar, { width: `${t.score}%` }]}
+                        style={[styles.traitBar, { width: `${trait.score}%` }]}
                       />
                     </View>
 
@@ -303,11 +300,11 @@ export default function ProfileScreen() {
                     {isExpanded && (
                       <View style={styles.expandedContent}>
                         <View style={styles.expandedSection}>
-                          <Text style={styles.expandedSectionTitle}>{t.trait} — {t.score}/100</Text>
-                          <Text style={styles.expandedText}>{t.definition}</Text>
+                          <Text style={styles.expandedSectionTitle}>{trait.trait} — {trait.score}/100</Text>
+                          <Text style={styles.expandedText}>{trait.definition}</Text>
                         </View>
                         <View style={styles.expandedSection}>
-                          {t.subtraits.map((s) => (
+                          {trait.subtraits.map((s) => (
                             <View key={s.name} style={styles.subtraitRow}>
                               <View style={[styles.subtraitDot, { backgroundColor: colors.from }]} />
                               <Text style={styles.expandedText}>
@@ -318,11 +315,11 @@ export default function ProfileScreen() {
                         </View>
                         <View style={styles.expandedSection}>
                           <Text style={styles.expandedSectionTitle}>Your Profile</Text>
-                          <Text style={styles.expandedText}>{t.profile}</Text>
+                          <Text style={styles.expandedText}>{trait.profile}</Text>
                         </View>
                         <View style={styles.expandedFaith}>
                           <Text style={styles.faithHelpText}>
-                            <Text style={styles.boldText}>How Faith Can Help</Text> — {t.faith}
+                            <Text style={styles.boldText}>How Faith Can Help</Text> — {trait.faith}
                           </Text>
                         </View>
                       </View>
@@ -448,7 +445,7 @@ export default function ProfileScreen() {
           >
             <View style={styles.settingsHeader}>
               <TouchableOpacity style={styles.settingsCloseButton} onPress={closeSettingsMenu}>
-                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
                   <Path d="M18 6L6 18M6 6l12 12" />
                 </Svg>
               </TouchableOpacity>
@@ -456,71 +453,77 @@ export default function ProfileScreen() {
               <View style={{ width: 42 }} />
             </View>
 
-            <View style={styles.settingsAvatarSection}>
-              {profile?.photo_url ? (
-                <Image source={{ uri: profile.photo_url }} style={styles.settingsAvatarImage} />
-              ) : (
-                <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.settingsAvatar}>
-                  <Text style={styles.settingsAvatarText}>{initials}</Text>
-                </LinearGradient>
-              )}
-              <Text style={styles.settingsName}>{profile?.name || 'User'}</Text>
-              <Text style={styles.settingsEmail}>{profile?.email || 'user@fincore.one'}</Text>
-              <View style={styles.providerBadge}>
-                <Text style={styles.providerBadgeText}>{authProviderLabel}</Text>
-              </View>
-            </View>
-
-            <LinearGradient
-              colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.08)']}
-              style={styles.settingsSummaryCard}
+            <ScrollView
+              style={styles.settingsScroll}
+              contentContainerStyle={[styles.settingsScrollContent, { paddingBottom: insets.bottom + 24 }]}
+              showsVerticalScrollIndicator={false}
             >
-              <View style={styles.settingsSummaryHeader}>
-                <View style={styles.settingsSummaryPill}>
-                  <Text style={styles.settingsSummaryPillText}>Synced</Text>
+              <View style={styles.settingsAvatarSection}>
+                {profile?.photo_url ? (
+                  <Image source={{ uri: profile.photo_url }} style={styles.settingsAvatarImage} />
+                ) : (
+                  <LinearGradient colors={t.gradients.avatar} style={styles.settingsAvatar}>
+                    <Text style={styles.settingsAvatarText}>{initials}</Text>
+                  </LinearGradient>
+                )}
+                <Text style={styles.settingsName}>{profile?.name || 'User'}</Text>
+                <Text style={styles.settingsEmail}>{profile?.email || 'user@fincore.one'}</Text>
+                <View style={styles.providerBadge}>
+                  <Text style={styles.providerBadgeText}>{authProviderLabel}</Text>
                 </View>
-                <Text style={styles.settingsSummaryCaption}>Coach ready</Text>
               </View>
-              <Text style={styles.settingsSummaryTitle}>Your profile is set up</Text>
-              <Text style={styles.settingsSummaryText}>
-                Fincore is using your latest personality profile to shape helpful guidance and better nudges.
-              </Text>
-            </LinearGradient>
 
-            <View style={styles.settingsMenuItems}>
-              <SettingsMenuItem
-                icon={<UserIcon size={18} />}
-                label="Personal Details"
-                onPress={() => setSettingsPage('personal')}
-              />
-              <SettingsMenuItem
-                icon={<ShieldIcon size={18} />}
-                label="Security & Privacy"
-                onPress={() => setSettingsPage('security')}
-              />
-              <SettingsMenuItem
-                icon={<BellIcon size={18} />}
-                label="Notifications"
-                onPress={() => setSettingsPage('notifications')}
-              />
-              <SettingsMenuItem
-                icon={<SettingsIcon size={18} />}
-                label="Preferences"
-                onPress={() => setSettingsPage('preferences')}
-              />
-              <SettingsMenuItem
-                icon={<HelpCircleIcon size={18} />}
-                label="Help & Support"
-                onPress={() => setSettingsPage('help')}
-              />
-              <SettingsMenuItem
-                icon={<LogOutIcon size={18} />}
-                label="Sign Out"
-                onPress={handleSignOut}
-                danger
-                isLast
-              />
-            </View>
+              <LinearGradient
+                colors={t.gradients.glassSheen}
+                style={styles.settingsSummaryCard}
+              >
+                <View style={styles.settingsSummaryHeader}>
+                  <View style={styles.settingsSummaryPill}>
+                    <Text style={styles.settingsSummaryPillText}>Synced</Text>
+                  </View>
+                  <Text style={styles.settingsSummaryCaption}>Coach ready</Text>
+                </View>
+                <Text style={styles.settingsSummaryTitle}>Your profile is set up</Text>
+                <Text style={styles.settingsSummaryText}>
+                  Fincore is using your latest personality profile to shape helpful guidance and better nudges.
+                </Text>
+              </LinearGradient>
+
+              <View style={styles.settingsMenuItems}>
+                <SettingsMenuItem
+                  icon={<UserIcon size={18} />}
+                  label="Personal Details"
+                  onPress={() => setSettingsPage('personal')}
+                />
+                <SettingsMenuItem
+                  icon={<ShieldIcon size={18} />}
+                  label="Security & Privacy"
+                  onPress={() => setSettingsPage('security')}
+                />
+                <SettingsMenuItem
+                  icon={<BellIcon size={18} />}
+                  label="Notifications"
+                  onPress={() => setSettingsPage('notifications')}
+                />
+                <SettingsMenuItem
+                  icon={<SettingsIcon size={18} />}
+                  label="Preferences"
+                  onPress={() => setSettingsPage('preferences')}
+                />
+                <SettingsMenuItem
+                  icon={<HelpCircleIcon size={18} />}
+                  label="Help & Support"
+                  onPress={() => setSettingsPage('help')}
+                />
+                <SettingsMenuItem
+                  icon={<LogOutIcon size={18} />}
+                  label="Sign Out"
+                  onPress={handleSignOut}
+                  danger
+                  isLast
+                />
+              </View>
+            </ScrollView>
           </Animated.View>
         </View>
       )}
@@ -578,6 +581,9 @@ interface SettingsMenuItemProps {
 }
 
 function SettingsMenuItem({ icon, label, onPress, danger = false, isLast = false }: SettingsMenuItemProps) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+
   return (
     <TouchableOpacity
       style={[styles.settingsMenuItem, !isLast && styles.settingsMenuItemBorder]}
@@ -586,17 +592,17 @@ function SettingsMenuItem({ icon, label, onPress, danger = false, isLast = false
     >
       <View style={styles.settingsMenuItemIcon}>{icon}</View>
       <Text style={[styles.settingsMenuItemLabel, danger && styles.settingsMenuItemDanger]}>{label}</Text>
-      <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={2}>
+      <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={t.overlayStrong} strokeWidth={2}>
         <Path d="M9 18l6-6-6-6" />
       </Svg>
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.background,
   },
   header: {
     paddingHorizontal: 20,
@@ -611,14 +617,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: t.type.headline,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.caption,
+    color: t.textFaint,
     marginTop: 4,
   },
   avatarButton: {
@@ -627,7 +633,7 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.6)',
+    borderColor: t.textMuted,
     marginTop: 4,
   },
   avatarGradient: {
@@ -645,9 +651,9 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   avatarText: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
   pageIndicators: {
     flexDirection: 'row',
@@ -659,11 +665,11 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: t.overlayStrong,
   },
   indicatorActive: {
     width: 24,
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
   },
   contentWrapper: {
     flex: 1,
@@ -673,36 +679,36 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   heroCard: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: t.overlayFaint,
     borderRadius: 28,
     padding: 24,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: t.overlaySubtle,
   },
   heroHeadline: {
-    fontSize: 26,
+    fontSize: t.type.headingLarge,
     fontWeight: '800',
-    color: '#fff',
+    color: t.textPrimary,
     marginBottom: 12,
   },
   heroSubtext: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: 'rgba(255,255,255,0.9)',
+    fontSize: t.type.body,
+    lineHeight: t.line.relaxed,
+    color: t.textNear,
   },
   section: {
     marginBottom: 20,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: t.overlayHairline,
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: t.overlaySubtle,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: t.type.bodyLarge,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     marginBottom: 12,
   },
   highlightRow: {
@@ -715,64 +721,64 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#00E0FF',
+    backgroundColor: t.accentBright,
     marginTop: 6,
   },
   highlightText: {
     flex: 1,
-    color: 'rgba(255,255,255,0.88)',
-    fontSize: 14,
-    lineHeight: 20,
+    color: t.surfaceRaised,
+    fontSize: t.type.bodyCompact,
+    lineHeight: t.line.body,
   },
   bulletRow: {
     marginBottom: 14,
   },
   bulletTitle: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     marginBottom: 6,
   },
   bulletText: {
-    color: 'rgba(255,255,255,0.78)',
-    lineHeight: 20,
+    color: t.textTertiary,
+    lineHeight: t.line.body,
   },
   ctaButton: {
     marginTop: 10,
     height: 52,
     borderRadius: 28,
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 40,
   },
   ctaText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '700',
-    color: '#005FCC',
+    color: t.primaryOnSurface,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: t.surfaceCard,
     borderRadius: 28,
     padding: 20,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
-    shadowColor: 'rgba(0,0,0,0.06)',
+    borderColor: t.overlayBorder,
+    shadowColor: t.shadowSoft,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 1,
     shadowRadius: 12,
   },
   cardTitle: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '700',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
     marginBottom: 8,
   },
   cardText: {
-    fontSize: 13,
-    color: '#666',
-    lineHeight: 20,
+    fontSize: t.type.bodySmall,
+    color: t.textOnSurfaceSecondary,
+    lineHeight: t.line.body,
   },
   boldText: {
     fontWeight: '700',
@@ -799,23 +805,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   traitLetter: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
   },
   traitName: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
   },
   traitScore: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '600',
-    color: '#005FCC',
+    color: t.primaryOnSurface,
   },
   traitBarBg: {
     height: 8,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: t.surfaceNeutral,
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -830,31 +836,31 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   seeMoreText: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '600',
-    color: '#005FCC',
+    color: t.primaryOnSurface,
   },
   expandedContent: {
     marginTop: 12,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: t.surfaceNeutralAlt,
     borderRadius: 12,
     overflow: 'hidden',
   },
   expandedSection: {
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.6)',
+    borderBottomColor: t.textMuted,
   },
   expandedSectionTitle: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
     marginBottom: 4,
   },
   expandedText: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 18,
+    fontSize: t.type.caption,
+    color: t.textOnSurfaceSecondary,
+    lineHeight: t.line.compact,
   },
   subtraitRow: {
     flexDirection: 'row',
@@ -870,25 +876,25 @@ const styles = StyleSheet.create({
   },
   expandedFaith: {
     padding: 12,
-    backgroundColor: 'rgba(0,95,204,0.08)',
+    backgroundColor: t.primaryTintFaint,
   },
   faithHelpText: {
-    fontSize: 12,
-    color: '#005FCC',
+    fontSize: t.type.caption,
+    color: t.primaryOnSurface,
   },
   faithHelpCard: {
     padding: 16,
-    backgroundColor: 'rgba(0,95,204,0.08)',
+    backgroundColor: t.primaryTintFaint,
     borderLeftWidth: 3,
-    borderLeftColor: '#005FCC',
+    borderLeftColor: t.primary,
     borderRadius: 8,
     borderTopLeftRadius: 0,
     borderBottomLeftRadius: 0,
   },
   faithHelpCardText: {
-    fontSize: 13,
-    color: '#666',
-    lineHeight: 20,
+    fontSize: t.type.bodySmall,
+    color: t.textOnSurfaceSecondary,
+    lineHeight: t.line.body,
   },
   impactItems: {
     gap: 12,
@@ -901,17 +907,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   impactLabel: {
-    fontSize: 13,
-    color: '#666',
+    fontSize: t.type.bodySmall,
+    color: t.textOnSurfaceSecondary,
   },
   impactAmount: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
   },
   impactBarBg: {
     height: 6,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: t.surfaceNeutral,
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -939,13 +945,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actionTitle: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
   },
   actionSub: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: t.type.caption,
+    color: t.textOnSurfaceSecondary,
     marginTop: 2,
   },
   lockOverlay: {
@@ -953,11 +959,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+    backgroundColor: t.shadowMedium,
   },
   lockOverlayGradient: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,95,204,0.18)',
+    backgroundColor: t.primaryTintMedium,
   },
   lockCard: {
     width: '100%',
@@ -966,41 +972,41 @@ const styles = StyleSheet.create({
     padding: 28,
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderColor: t.overlaySubtle,
+    backgroundColor: t.overlayFaint,
   },
   lockTitle: {
-    fontSize: 24,
+    fontSize: t.type.heading,
     fontWeight: '800',
-    color: '#fff',
+    color: t.textPrimary,
     marginTop: 16,
     marginBottom: 10,
   },
   lockText: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.92)',
+    fontSize: t.type.body,
+    color: t.textNear,
     textAlign: 'center',
     marginBottom: 24,
     maxWidth: 300,
-    lineHeight: 22,
+    lineHeight: t.line.relaxed,
   },
   upgradeButton: {
     height: 52,
     paddingHorizontal: 32,
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: 'rgba(0,0,0,0.18)',
+    shadowColor: t.shadowMedium,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.18,
     shadowRadius: 16,
     elevation: 6,
   },
   upgradeButtonText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '700',
-    color: '#005FCC',
+    color: t.primaryOnSurface,
   },
   settingsOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1008,13 +1014,19 @@ const styles = StyleSheet.create({
   },
   settingsMenu: {
     flex: 1,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.background,
     paddingHorizontal: 20,
     width: '100%',
   },
+  settingsScroll: {
+    flex: 1,
+  },
+  settingsScrollContent: {
+    flexGrow: 1,
+  },
   settingsBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.32)',
+    backgroundColor: t.shadowStrong,
   },
   settingsHeader: {
     flexDirection: 'row',
@@ -1030,9 +1042,9 @@ const styles = StyleSheet.create({
   },
   settingsTitle: {
     flex: 1,
-    fontSize: 20,
+    fontSize: t.type.title,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     textAlign: 'center',
     marginRight: 42,
   },
@@ -1045,7 +1057,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: t.overlaySubtle,
   },
   settingsSummaryHeader: {
     flexDirection: 'row',
@@ -1057,27 +1069,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(52,199,89,0.18)',
+    backgroundColor: t.successTint,
   },
   settingsSummaryPillText: {
-    fontSize: 11,
+    fontSize: t.type.captionSmall,
     fontWeight: '700',
-    color: '#B7F6C4',
+    color: t.successOnDark,
   },
   settingsSummaryCaption: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.72)',
+    fontSize: t.type.caption,
+    color: t.textTertiary,
   },
   settingsSummaryTitle: {
-    fontSize: 16,
+    fontSize: t.type.bodyLarge,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     marginBottom: 4,
   },
   settingsSummaryText: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.74)',
-    lineHeight: 18,
+    fontSize: t.type.bodySmall,
+    color: t.textTertiary,
+    lineHeight: t.line.compact,
   },
   settingsAvatar: {
     width: 80,
@@ -1086,7 +1098,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: t.overlayStrong,
     marginBottom: 12,
   },
   settingsAvatarImage: {
@@ -1094,22 +1106,22 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: t.overlayStrong,
     marginBottom: 12,
   },
   settingsAvatarText: {
-    fontSize: 26,
+    fontSize: t.type.headingLarge,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
   },
   settingsName: {
-    fontSize: 20,
+    fontSize: t.type.title,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
   },
   settingsEmail: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: t.type.bodyCompact,
+    color: t.textMuted,
     marginTop: 4,
   },
   providerBadge: {
@@ -1117,20 +1129,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: t.overlaySubtle,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)',
+    borderColor: t.overlayMedium,
   },
   providerBadgeText: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
   settingsMenuItems: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: t.overlayHairline,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: t.overlayFaint,
     overflow: 'hidden',
   },
   settingsMenuItem: {
@@ -1141,23 +1153,23 @@ const styles = StyleSheet.create({
   },
   settingsMenuItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: t.overlayHairline,
   },
   settingsMenuItemIcon: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
   },
   settingsMenuItemLabel: {
     flex: 1,
-    fontSize: 16,
-    color: '#fff',
+    fontSize: t.type.bodyLarge,
+    color: t.textPrimary,
   },
   settingsMenuItemDanger: {
-    color: '#FF453A',
+    color: t.danger,
   },
 });

@@ -14,7 +14,7 @@ if env_path.exists():
     load_dotenv(env_path)
 
 import boto3
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import FastAPI, HTTPException, Header, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -23,6 +23,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 limiter = Limiter(key_func=get_remote_address)
+from auth import get_current_user, create_session_token, verify_apple, verify_google_id_token, verify_microsoft_id_token
 from coach import stream_coach_response, save_profile, get_profile
 from scorer import score_survey
 from math_utils import calculate_psychology_cost
@@ -371,7 +372,6 @@ BUCKET = os.environ["FINCORE_S3_BUCKET"]
 
 
 class ChatRequest(BaseModel):
-    user_id: str
     message: str
     scan_id: str | None = None  # Optional: ID of a recent product scan to discuss
     scan_data: dict | None = None  # Optional: scan details (product_name, estimated_price, etc.)
@@ -379,7 +379,6 @@ class ChatRequest(BaseModel):
 
 
 class ProfileRequest(BaseModel):
-    user_id: str
     name: str
     big_five: dict  # {"openness": 75, "conscientiousness": 60, "extraversion": 80, "agreeableness": 55, "neuroticism": 40}
     email: str | None = None
@@ -387,7 +386,6 @@ class ProfileRequest(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
-    user_id: str
     name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -396,6 +394,72 @@ class ProfileUpdateRequest(BaseModel):
     occupation: str | None = None
     nationality: str | None = None
     auth_provider: str | None = None
+    app_preferences: dict | None = None
+    security_prefs: dict | None = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth — provider identity verification -> server-issued session
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ProviderAuthRequest(BaseModel):
+    identity_token: str | None = None  # Apple identityToken / Google+Microsoft id_token
+    authorization_code: str | None = None  # Apple only -- fallback when identity_token is absent
+
+
+class ProviderAuthResponse(BaseModel):
+    user_id: str
+    session_token: str
+
+
+# TEMP (2026-09-10): dev-only session bypass for local testing.
+# Only active when ENVIRONMENT=development is set explicitly; there is no
+# ENVIRONMENT variable in .env today, so the default is OFF. When off, the
+# route returns 404 -- indistinguishable from not existing. Declared BEFORE
+# /auth/{provider} so FastAPI matches it first.
+DEV_AUTH_ENABLED = os.getenv("ENVIRONMENT", "").strip().lower() == "development"
+DEV_TEST_USER_ID = "dev:local-tester"
+
+if DEV_AUTH_ENABLED:
+    logger.warning("ENVIRONMENT=development: /auth/dev session bypass is ENABLED. Never run production this way.")
+
+
+@app.post("/auth/dev", response_model=ProviderAuthResponse)
+@limiter.limit("20/minute")
+async def dev_auth(request: Request):
+    """Mint a real signed session for a fixed test user without a provider token."""
+    if not DEV_AUTH_ENABLED:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return ProviderAuthResponse(
+        user_id=DEV_TEST_USER_ID,
+        session_token=create_session_token(DEV_TEST_USER_ID, "dev"),
+    )
+
+
+@app.post("/auth/{provider}", response_model=ProviderAuthResponse)
+@limiter.limit("20/minute")
+async def provider_auth(provider: str, request: Request, req: ProviderAuthRequest):
+    """Verify a Sign-In-with-{Apple,Google,Microsoft} identity token and issue a session.
+
+    user_id is derived entirely from the verified provider subject claim
+    (`{provider}:{sub}`) -- the client never gets to choose it.
+    """
+    if provider == "apple":
+        subject = verify_apple(req.identity_token, req.authorization_code)
+    elif provider == "google":
+        if not req.identity_token:
+            raise HTTPException(status_code=400, detail="Missing identity_token")
+        subject = verify_google_id_token(req.identity_token)
+    elif provider == "microsoft":
+        if not req.identity_token:
+            raise HTTPException(status_code=400, detail="Missing identity_token")
+        subject = verify_microsoft_id_token(req.identity_token)
+    else:
+        raise HTTPException(status_code=400, detail="Unknown provider")
+
+    user_id = f"{provider}:{subject}"
+    session_token = create_session_token(user_id, provider)
+    return ProviderAuthResponse(user_id=user_id, session_token=session_token)
 
 
 @app.get("/")
@@ -412,34 +476,33 @@ class SurveyAnswerItem(BaseModel):
 
 
 class SurveyRequest(BaseModel):
-    user_id: str
     name: str | None = None
     answers: list[SurveyAnswerItem]
 
 
 @app.post("/score")
-def submit_survey(req: SurveyRequest):
+def submit_survey(req: SurveyRequest, user_id: str = Depends(get_current_user)):
     try:
         big_five = score_survey([a.model_dump() for a in req.answers])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    profile = {"user_id": req.user_id, "name": req.name, "big_five": big_five}
-    save_profile(req.user_id, profile, BUCKET)
+    profile = {"user_id": user_id, "name": req.name, "big_five": big_five}
+    save_profile(user_id, profile, BUCKET)
     return {"big_five": big_five}
 
 
 @app.post("/profile")
-def upsert_profile(req: ProfileRequest):
-    save_profile(req.user_id, req.model_dump(), BUCKET)
+def upsert_profile(req: ProfileRequest, user_id: str = Depends(get_current_user)):
+    save_profile(user_id, {**req.model_dump(), "user_id": user_id}, BUCKET)
     return {"status": "ok"}
 
 
-@app.patch("/profile/{user_id}")
-def update_profile(user_id: str, req: ProfileUpdateRequest):
+@app.patch("/profile")
+def update_profile(req: ProfileUpdateRequest, user_id: str = Depends(get_current_user)):
     """Update specific profile fields without overwriting existing data."""
     existing = get_profile(user_id, BUCKET) or {}
 
-    updates = req.model_dump(exclude_none=True, exclude={"user_id"})
+    updates = req.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
@@ -449,14 +512,13 @@ def update_profile(user_id: str, req: ProfileUpdateRequest):
 
 
 class ProfilePhotoRequest(BaseModel):
-    user_id: str
     image_base64: str
     media_type: str = "image/jpeg"
 
 
-@app.post("/profile/{user_id}/photo")
-def upload_profile_photo(user_id: str, req: ProfilePhotoRequest):
-    """Upload a profile photo for a user."""
+@app.post("/profile/photo")
+def upload_profile_photo(req: ProfilePhotoRequest, user_id: str = Depends(get_current_user)):
+    """Upload a profile photo for the authenticated user."""
     import base64
     from datetime import datetime
 
@@ -485,16 +547,16 @@ def upload_profile_photo(user_id: str, req: ProfilePhotoRequest):
         raise HTTPException(status_code=500, detail="Failed to upload photo")
 
 
-@app.get("/profile/{user_id}")
-def fetch_profile(user_id: str):
+@app.get("/profile")
+def fetch_profile(user_id: str = Depends(get_current_user)):
     profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
     return profile
 
 
-@app.get("/profile/{user_id}/insights")
-async def get_insights(user_id: str):
+@app.get("/profile/insights")
+async def get_insights(user_id: str = Depends(get_current_user)):
     """Generate personalised 'How Faith Will Help You' insights based on OCEAN scores."""
     profile = get_profile(user_id, BUCKET)
     if not profile:
@@ -509,8 +571,8 @@ async def get_insights(user_id: str):
     return {"insights": insights}
 
 
-@app.get("/users/{user_id}")
-def get_user(user_id: str):
+@app.get("/users/me")
+def get_user(user_id: str = Depends(get_current_user)):
     """Return the full user object (profile + metadata)."""
     profile = get_profile(user_id, BUCKET)
     if not profile:
@@ -525,8 +587,8 @@ def get_user(user_id: str):
     }
 
 
-@app.delete("/users/{user_id}")
-def delete_user(user_id: str):
+@app.delete("/users/me")
+def delete_user(user_id: str = Depends(get_current_user)):
     """Delete all user data from S3 (GDPR/App Store compliance).
 
     Deletes:
@@ -573,19 +635,18 @@ def delete_user(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to delete account")
 
 
-@app.get("/users/{user_id}/scans")
-def get_scans(user_id: str, limit: int = 10):
-    """Get recent scans for a user."""
+@app.get("/users/scans")
+def get_scans(limit: int = 10, user_id: str = Depends(get_current_user)):
+    """Get recent scans for the authenticated user."""
     scans = get_user_scans(user_id, BUCKET, limit)
     return {"scans": scans, "count": len(scans)}
 
 
-@app.get("/users/{user_id}/conversations")
-def get_conversations(user_id: str, limit: int = 20, sessions: bool = False):
-    """Get conversation history for a user.
+@app.get("/users/conversations")
+def get_conversations(limit: int = 20, sessions: bool = False, user_id: str = Depends(get_current_user)):
+    """Get conversation history for the authenticated user.
 
     Args:
-        user_id: The user's ID
         limit: Maximum number of messages to return (only used when sessions=False)
         sessions: If True, return grouped session summaries instead of flat messages
 
@@ -601,12 +662,11 @@ def get_conversations(user_id: str, limit: int = 20, sessions: bool = False):
     return {"messages": messages, "count": len(messages)}
 
 
-@app.get("/users/{user_id}/conversations/{session_id}")
-def get_conversation_by_session(user_id: str, session_id: str):
+@app.get("/users/conversations/{session_id}")
+def get_conversation_by_session(session_id: str, user_id: str = Depends(get_current_user)):
     """Get all messages for a specific conversation session.
 
     Args:
-        user_id: The user's ID
         session_id: The session ID (use "default" for messages without a session_id)
 
     Returns:
@@ -620,8 +680,8 @@ class ScanUpdateRequest(BaseModel):
     estimated_price: float | None = None
 
 
-@app.patch("/users/{user_id}/scans/{scan_id}")
-def patch_scan(user_id: str, scan_id: str, req: ScanUpdateRequest):
+@app.patch("/users/scans/{scan_id}")
+def patch_scan(scan_id: str, req: ScanUpdateRequest, user_id: str = Depends(get_current_user)):
     """Update a scan record (e.g., user-corrected price)."""
     updates = req.model_dump(exclude_none=True)
     if not updates:
@@ -636,16 +696,16 @@ def patch_scan(user_id: str, scan_id: str, req: ScanUpdateRequest):
 
 @app.post("/chat")
 @limiter.limit("30/minute")
-async def chat(request: Request, req: ChatRequest):
+async def chat(request: Request, req: ChatRequest, user_id: str = Depends(get_current_user)):
     # Load conversation history for THIS session only
     if req.session_id:
         conversation_history = await asyncio.to_thread(
-            get_session_messages, req.user_id, req.session_id, BUCKET
+            get_session_messages, user_id, req.session_id, BUCKET
         )
     else:
         # Fallback to old behavior if no session_id (shouldn't happen)
         conversation_history = await asyncio.to_thread(
-            get_conversation_history, req.user_id, BUCKET, 20
+            get_conversation_history, user_id, BUCKET, 20
         )
 
     # Build multimodal metadata from scan context
@@ -669,7 +729,7 @@ async def chat(request: Request, req: ChatRequest):
     # Save user message with multimodal context
     await asyncio.to_thread(
         save_message,
-        req.user_id,
+        user_id,
         req.message,
         "user",
         BUCKET,
@@ -687,7 +747,7 @@ async def chat(request: Request, req: ChatRequest):
             partial_message = "".join(response_chunks)
             await asyncio.to_thread(
                 save_message,
-                req.user_id,
+                user_id,
                 partial_message,
                 "assistant",
                 BUCKET,
@@ -699,7 +759,7 @@ async def chat(request: Request, req: ChatRequest):
     async def generate():
         try:
             async for chunk in stream_coach_response(
-                req.user_id,
+                user_id,
                 req.message,
                 BUCKET,
                 conversation_history,
@@ -717,7 +777,7 @@ async def chat(request: Request, req: ChatRequest):
             if assistant_message:
                 await asyncio.to_thread(
                     save_message,
-                    req.user_id,
+                    user_id,
                     assistant_message,
                     "assistant",
                     BUCKET,
@@ -741,16 +801,16 @@ async def chat(request: Request, req: ChatRequest):
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 @limiter.limit("20/minute")
-async def analyze(request: Request, req: AnalyzeRequest):
+async def analyze(request: Request, req: AnalyzeRequest, user_id: str = Depends(get_current_user)):
     """Analyse a product image via AWS Bedrock and return a financial score."""
     # Generate scan_id upfront so we can pass it to tracing
-    scan_id = str(uuid.uuid4())[:8] if req.user_id else None
+    scan_id = str(uuid.uuid4())[:8]
 
     # Lookup user_name from profile if not provided (for Langfuse tracing)
     user_name = req.user_name
-    if req.user_id and not user_name:
+    if not user_name:
         try:
-            profile = get_profile(req.user_id, BUCKET)
+            profile = get_profile(user_id, BUCKET)
             user_name = profile.get("name") if profile else None
         except Exception:
             pass  # Fallback to user_id in tracing
@@ -767,34 +827,32 @@ async def analyze(request: Request, req: AnalyzeRequest):
                 "BEDROCK_IMAGE_MODEL_ID",
                 "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
             ),
-            user_id=req.user_id,
+            user_id=user_id,
             user_name=user_name,
             scan_id=scan_id,
             session_id=req.session_id,
         )
         analysis = AnalysisResult(**result)
 
-        # Save scan to S3 if user_id provided
-        if req.user_id and scan_id:
-            # Use the pre-generated scan_id for consistency
-            key = f"users/{req.user_id}/scans/{scan_id}.json"
-            from datetime import datetime
-            scan_record = {
-                "scan_id": scan_id,
-                "timestamp": datetime.utcnow().isoformat(),
-                "user_id": req.user_id,
-                **result
-            }
-            try:
-                _s3().put_object(
-                    Bucket=BUCKET,
-                    Key=key,
-                    Body=json.dumps(scan_record),
-                    ContentType="application/json"
-                )
-                logger.info(f"Saved scan {scan_id} for user {req.user_id}")
-            except Exception as e:
-                logger.error(f"Failed to save scan to S3: {e}")
+        # Save scan to S3
+        key = f"users/{user_id}/scans/{scan_id}.json"
+        from datetime import datetime
+        scan_record = {
+            "scan_id": scan_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_id": user_id,
+            **result
+        }
+        try:
+            _s3().put_object(
+                Bucket=BUCKET,
+                Key=key,
+                Body=json.dumps(scan_record),
+                ContentType="application/json"
+            )
+            logger.info(f"Saved scan {scan_id} for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to save scan to S3: {e}")
 
         return AnalyzeResponse(success=True, analysis=analysis, scan_id=scan_id)
     except Exception as exc:
@@ -837,14 +895,14 @@ Use British English. Be practical and helpful, not preachy."""
 
 @app.post("/analyze-text", response_model=AnalyzeResponse)
 @limiter.limit("20/minute")
-async def analyze_text(request: Request, req: AnalyzeTextRequest):
+async def analyze_text(request: Request, req: AnalyzeTextRequest, user_id: str = Depends(get_current_user)):
     """Analyse a product from text description (no image required)."""
-    scan_id = str(uuid.uuid4())[:8] if req.user_id else None
+    scan_id = str(uuid.uuid4())[:8]
 
     user_name = req.user_name
-    if req.user_id and not user_name:
+    if not user_name:
         try:
-            profile = get_profile(req.user_id, BUCKET)
+            profile = get_profile(user_id, BUCKET)
             user_name = profile.get("name") if profile else None
         except Exception:
             pass
@@ -885,26 +943,25 @@ async def analyze_text(request: Request, req: AnalyzeTextRequest):
         analysis = AnalysisResult(**result)
 
         # Save scan to S3
-        if req.user_id and scan_id:
-            key = f"users/{req.user_id}/scans/{scan_id}.json"
-            from datetime import datetime
-            scan_record = {
-                "scan_id": scan_id,
-                "timestamp": datetime.utcnow().isoformat(),
-                "user_id": req.user_id,
-                "source": "text",
-                **result,
-            }
-            try:
-                _s3().put_object(
-                    Bucket=BUCKET,
-                    Key=key,
-                    Body=json.dumps(scan_record),
-                    ContentType="application/json",
-                )
-                logger.info(f"Saved text scan {scan_id} for user {req.user_id}")
-            except Exception as e:
-                logger.error(f"Failed to save text scan to S3: {e}")
+        key = f"users/{user_id}/scans/{scan_id}.json"
+        from datetime import datetime
+        scan_record = {
+            "scan_id": scan_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_id": user_id,
+            "source": "text",
+            **result,
+        }
+        try:
+            _s3().put_object(
+                Bucket=BUCKET,
+                Key=key,
+                Body=json.dumps(scan_record),
+                ContentType="application/json",
+            )
+            logger.info(f"Saved text scan {scan_id} for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to save text scan to S3: {e}")
 
         return AnalyzeResponse(success=True, analysis=analysis, scan_id=scan_id)
     except Exception as exc:
@@ -942,13 +999,17 @@ async def price_check(req: PriceCheckRequest):
     )
 
 
+class PsychologyCostRequest(BaseModel):
+    base_price: float
+
+
 @app.post("/psychology-cost")
-async def get_psychology_cost(user_id: str, base_price: float):
+async def get_psychology_cost(req: PsychologyCostRequest, user_id: str = Depends(get_current_user)):
     profile = get_profile(user_id, BUCKET)
     if not profile or not profile.get("big_five"):
         raise HTTPException(status_code=400, detail="Complete quiz first")
 
-    result = calculate_psychology_cost(base_price, profile["big_five"])
+    result = calculate_psychology_cost(req.base_price, profile["big_five"])
     return result
 
 
@@ -967,8 +1028,8 @@ class EmotionalTaxResponse(BaseModel):
     breakdown: list[EmotionalTaxBreakdown]
 
 
-@app.get("/users/{user_id}/emotional-tax", response_model=EmotionalTaxResponse)
-def get_emotional_tax(user_id: str, limit: int = 5):
+@app.get("/users/emotional-tax", response_model=EmotionalTaxResponse)
+def get_emotional_tax(limit: int = 5, user_id: str = Depends(get_current_user)):
     """Calculate the total emotional/personality tax paid across recent scans."""
     profile = get_profile(user_id, BUCKET)
     if not profile or not profile.get("big_five"):
@@ -1008,7 +1069,6 @@ def get_emotional_tax(user_id: str, limit: int = 5):
 
 class UploadScanImageRequest(BaseModel):
     image_base64: str  # Base64-encoded image data (without data URI prefix)
-    user_id: str
     scan_id: str
 
 
@@ -1019,7 +1079,7 @@ class UploadScanImageResponse(BaseModel):
 
 
 @app.post("/upload-scan-image", response_model=UploadScanImageResponse)
-async def upload_scan_image(req: UploadScanImageRequest):
+async def upload_scan_image(req: UploadScanImageRequest, user_id: str = Depends(get_current_user)):
     """Upload a scan image to S3 at users/{user_id}/scans/{scan_id}/original.jpg."""
     try:
         # Decode base64 image
@@ -1032,7 +1092,7 @@ async def upload_scan_image(req: UploadScanImageRequest):
             )
 
         # Construct S3 key
-        s3_key = f"users/{req.user_id}/scans/{req.scan_id}/original.jpg"
+        s3_key = f"users/{user_id}/scans/{req.scan_id}/original.jpg"
 
         # Upload to S3
         _s3().put_object(
@@ -1047,9 +1107,9 @@ async def upload_scan_image(req: UploadScanImageRequest):
         s3_url = f"https://{BUCKET}.s3.{region}.amazonaws.com/{s3_key}"
 
         # Optionally update the scan record with the image URL
-        scan = get_scan(req.user_id, req.scan_id, BUCKET)
+        scan = get_scan(user_id, req.scan_id, BUCKET)
         if scan:
-            update_scan(req.user_id, req.scan_id, {"image_url": s3_url}, BUCKET)
+            update_scan(user_id, req.scan_id, {"image_url": s3_url}, BUCKET)
 
         return UploadScanImageResponse(success=True, s3_url=s3_url)
 
@@ -1070,17 +1130,16 @@ async def upload_scan_image(req: UploadScanImageRequest):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ChangePasswordRequest(BaseModel):
-    user_id: str
     current_password: str
     new_password: str
 
 
 @app.post("/change-password")
-async def change_password(req: ChangePasswordRequest):
+async def change_password(req: ChangePasswordRequest, user_id: str = Depends(get_current_user)):
     """Change user password (placeholder - integrate with your auth provider)."""
     import bcrypt
 
-    profile = get_profile(req.user_id, BUCKET)
+    profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -1092,22 +1151,21 @@ async def change_password(req: ChangePasswordRequest):
 
     new_hash = bcrypt.hashpw(req.new_password.encode(), bcrypt.gensalt()).decode()
     profile["password_hash"] = new_hash
-    save_profile(req.user_id, profile, BUCKET)
+    save_profile(user_id, profile, BUCKET)
 
     return {"status": "ok"}
 
 
 class TwoFactorSendRequest(BaseModel):
-    user_id: str
     phone_number: str
 
 
 @app.post("/2fa/send-code")
-async def send_2fa_code(req: TwoFactorSendRequest):
+async def send_2fa_code(req: TwoFactorSendRequest, user_id: str = Depends(get_current_user)):
     """Send a 2FA verification code via SMS (placeholder - integrate with Twilio/SNS)."""
     import random
 
-    profile = get_profile(req.user_id, BUCKET)
+    profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -1118,25 +1176,24 @@ async def send_2fa_code(req: TwoFactorSendRequest):
     profile["2fa_code"] = code
     profile["2fa_code_expiry"] = (datetime.utcnow().timestamp() + 300)
     profile["2fa_phone"] = req.phone_number
-    save_profile(req.user_id, profile, BUCKET)
+    save_profile(user_id, profile, BUCKET)
 
     # TODO: Send SMS via Twilio/SNS
     # In production, integrate with a real SMS provider
-    logger.info(f"[2FA] Code requested for {req.user_id}")
+    logger.info(f"[2FA] Code requested for {user_id}")
 
     return {"status": "ok", "message": "Code sent"}
 
 
 class TwoFactorVerifyRequest(BaseModel):
-    user_id: str
     code: str
 
 
 @app.post("/2fa/verify")
 @limiter.limit("5/minute")
-async def verify_2fa_code(request: Request, req: TwoFactorVerifyRequest):
+async def verify_2fa_code(request: Request, req: TwoFactorVerifyRequest, user_id: str = Depends(get_current_user)):
     """Verify a 2FA code and enable 2FA for the user."""
-    profile = get_profile(req.user_id, BUCKET)
+    profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -1156,25 +1213,21 @@ async def verify_2fa_code(request: Request, req: TwoFactorVerifyRequest):
     profile["2fa_enabled"] = True
     profile.pop("2fa_code", None)
     profile.pop("2fa_code_expiry", None)
-    save_profile(req.user_id, profile, BUCKET)
+    save_profile(user_id, profile, BUCKET)
 
     return {"status": "ok"}
 
 
-class TwoFactorDisableRequest(BaseModel):
-    user_id: str
-
-
 @app.post("/2fa/disable")
-async def disable_2fa(req: TwoFactorDisableRequest):
-    """Disable 2FA for a user."""
-    profile = get_profile(req.user_id, BUCKET)
+async def disable_2fa(user_id: str = Depends(get_current_user)):
+    """Disable 2FA for the authenticated user."""
+    profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
     profile["2fa_enabled"] = False
     profile.pop("2fa_phone", None)
-    save_profile(req.user_id, profile, BUCKET)
+    save_profile(user_id, profile, BUCKET)
 
     return {"status": "ok"}
 
@@ -1205,9 +1258,9 @@ def save_user_sessions(user_id: str, sessions: list, bucket: str):
     )
 
 
-@app.get("/users/{user_id}/sessions")
-def get_sessions(user_id: str):
-    """Get all active sessions for a user."""
+@app.get("/users/sessions")
+def get_sessions(user_id: str = Depends(get_current_user)):
+    """Get all active sessions for the authenticated user."""
     sessions = get_user_sessions(user_id, BUCKET)
 
     # If no sessions exist, create a default "current" session
@@ -1223,8 +1276,8 @@ def get_sessions(user_id: str):
     return {"sessions": sessions}
 
 
-@app.post("/users/{user_id}/sessions/{session_id}/revoke")
-def revoke_session(user_id: str, session_id: str):
+@app.post("/users/sessions/{session_id}/revoke")
+def revoke_session(session_id: str, user_id: str = Depends(get_current_user)):
     """Revoke a specific session."""
     sessions = get_user_sessions(user_id, BUCKET)
     sessions = [s for s in sessions if s.get("session_id") != session_id]
@@ -1236,27 +1289,23 @@ def revoke_session(user_id: str, session_id: str):
 # Data Export (GDPR)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class DataExportRequest(BaseModel):
-    user_id: str
-
-
 @app.post("/users/data-export")
-async def request_data_export(req: DataExportRequest):
+async def request_data_export(user_id: str = Depends(get_current_user)):
     """Request a data export for GDPR compliance."""
-    profile = get_profile(req.user_id, BUCKET)
+    profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
     # Record the export request
     export_request = {
-        "user_id": req.user_id,
+        "user_id": user_id,
         "requested_at": datetime.utcnow().isoformat(),
         "status": "pending",
         "email": profile.get("email"),
     }
 
     # Store in exports queue
-    key = f"exports/{req.user_id}/{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json"
+    key = f"exports/{user_id}/{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.json"
     _s3().put_object(
         Bucket=BUCKET,
         Key=key,
@@ -1265,7 +1314,7 @@ async def request_data_export(req: DataExportRequest):
     )
 
     # TODO: Trigger async export job (Lambda, SQS, etc.)
-    logger.info(f"[GDPR] Data export requested for user {req.user_id}")
+    logger.info(f"[GDPR] Data export requested for user {user_id}")
 
     return {"status": "ok", "message": "Export requested"}
 
@@ -1275,18 +1324,17 @@ async def request_data_export(req: DataExportRequest):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class PushTokenRequest(BaseModel):
-    user_id: str
     push_token: str
     platform: str  # 'ios' or 'android'
     device_name: str | None = None
 
 
 @app.post("/users/push-token")
-async def register_push_token(req: PushTokenRequest):
-    """Register a device push token for a user."""
-    profile = get_profile(req.user_id, BUCKET)
+async def register_push_token(req: PushTokenRequest, user_id: str = Depends(get_current_user)):
+    """Register a device push token for the authenticated user."""
+    profile = get_profile(user_id, BUCKET)
     if not profile:
-        profile = {"user_id": req.user_id}
+        profile = {"user_id": user_id}
 
     # Store push tokens as a list (user may have multiple devices)
     push_tokens = profile.get("push_tokens", [])
@@ -1303,33 +1351,32 @@ async def register_push_token(req: PushTokenRequest):
     })
 
     profile["push_tokens"] = push_tokens
-    save_profile(req.user_id, profile, BUCKET)
+    save_profile(user_id, profile, BUCKET)
 
-    logger.info(f"[Push] Registered token for user {req.user_id} on {req.platform}")
+    logger.info(f"[Push] Registered token for user {user_id} on {req.platform}")
     return {"status": "ok"}
 
 
 class NotificationPrefsRequest(BaseModel):
-    user_id: str
     prefs: dict
 
 
 @app.post("/users/notification-prefs")
-async def save_notification_prefs(req: NotificationPrefsRequest):
-    """Save notification preferences for a user."""
-    profile = get_profile(req.user_id, BUCKET)
+async def save_notification_prefs(req: NotificationPrefsRequest, user_id: str = Depends(get_current_user)):
+    """Save notification preferences for the authenticated user."""
+    profile = get_profile(user_id, BUCKET)
     if not profile:
-        profile = {"user_id": req.user_id}
+        profile = {"user_id": user_id}
 
     profile["notification_prefs"] = req.prefs
-    save_profile(req.user_id, profile, BUCKET)
+    save_profile(user_id, profile, BUCKET)
 
     return {"status": "ok"}
 
 
-@app.get("/users/{user_id}/notification-prefs")
-def get_notification_prefs(user_id: str):
-    """Get notification preferences for a user."""
+@app.get("/users/notification-prefs")
+def get_notification_prefs(user_id: str = Depends(get_current_user)):
+    """Get notification preferences for the authenticated user."""
     profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1338,15 +1385,14 @@ def get_notification_prefs(user_id: str):
 
 
 class SendNotificationRequest(BaseModel):
-    user_id: str
     title: str
     body: str
     data: dict | None = None
 
 
-@app.post("/users/{user_id}/send-notification")
-async def send_push_notification(user_id: str, req: SendNotificationRequest):
-    """Send a push notification to a user's devices via Expo Push Service."""
+@app.post("/users/send-notification")
+async def send_push_notification(req: SendNotificationRequest, user_id: str = Depends(get_current_user)):
+    """Send a push notification to the authenticated user's own devices via Expo Push Service."""
     import httpx
 
     profile = get_profile(user_id, BUCKET)

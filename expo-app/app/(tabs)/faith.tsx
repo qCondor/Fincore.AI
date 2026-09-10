@@ -1,13 +1,16 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   ScrollView,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Image,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +22,9 @@ import { ComingSoonModal } from '../../components/ComingSoonModal';
 import { HistoryDrawer } from '../../components/HistoryDrawer';
 import { useChat } from '../../hooks/useChat';
 import { API_BASE_URL } from '../../config';
+import { apiPost } from '../../lib/api';
+import { formatCurrency } from '../../lib/format';
+import type { AnalysisResult } from '../../hooks/useScan';
 import { useProfile } from '../../hooks/useProfile';
 import { useUser } from '../../contexts/UserContext';
 import type { ChatSession } from '../../hooks/useChatHistory';
@@ -26,6 +32,8 @@ import { MenuIcon, PlusIcon } from '../../components/icons';
 import { WaveBackground } from '../../components/WaveBackground';
 import { BottomInputBar } from '../../components/BottomInputBar';
 import { AnimatedScreen } from '../../components/AnimatedScreen';
+import { useTheme, type Theme } from '../../contexts/ThemeContext';
+import { useSounds } from '../../lib/sounds';
 
 interface Message {
   id: string;
@@ -40,8 +48,9 @@ interface Message {
 }
 
 function ChartIcon() {
+  const t = useTheme();
   return (
-    <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="#005FCC" strokeWidth={2.5}>
+    <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={t.primaryOnSurface} strokeWidth={2.5}>
       <Line x1={18} y1={20} x2={18} y2={10} />
       <Line x1={12} y1={20} x2={12} y2={4} />
       <Line x1={6} y1={20} x2={6} y2={14} />
@@ -50,18 +59,22 @@ function ChartIcon() {
 }
 
 function FaithSparklesIcon() {
+  const t = useTheme();
   return (
-    <Svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+    <Svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
       <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
     </Svg>
   );
 }
 
 function TypingIndicator() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+
   return (
     <View style={styles.typingContainer}>
       <View style={styles.faithAvatar}>
-        <LinearGradient colors={['#00C2FF', '#005FCC']} style={styles.faithAvatarGradient}>
+        <LinearGradient colors={t.gradients.avatarReversed} style={styles.faithAvatarGradient}>
           <Text style={styles.faithAvatarText}>F</Text>
         </LinearGradient>
       </View>
@@ -130,6 +143,9 @@ interface ScanContext {
 }
 
 export default function FaithScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const sounds = useSounds();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ scanContext?: string; profileQuestion?: string }>();
@@ -152,7 +168,16 @@ export default function FaithScreen() {
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const [comingSoonModal, setComingSoonModal] = useState<{ open: boolean; feature: 'banking' | 'analytics' | 'blueprint' | 'voice' | null }>({ open: false, feature: null });
   const scrollRef = useRef<ScrollView>(null);
+  const inputRef = useRef<TextInput>(null);
   const handledParamsRef = useRef<string | null>(null);
+
+  // Auto-focus the input when landing on a fresh chat with no scan/profile
+  // context queued up (that flow auto-sends a message instead)
+  React.useEffect(() => {
+    if (!params.scanContext && !params.profileQuestion) {
+      inputRef.current?.focus();
+    }
+  }, []);
 
   // Handle initial context from scan or profile - start fresh session
   React.useEffect(() => {
@@ -173,7 +198,7 @@ export default function FaithScreen() {
         contextMessage = `I just scanned a product: ${scanContext.product_name || 'Unknown product'}. ` +
           (scanContext.overall_score ? `It scored ${scanContext.overall_score}/100. ` : '') +
           (scanContext.verdict ? `The verdict was: "${scanContext.verdict}". ` : '') +
-          (scanContext.estimated_price ? `The price is £${scanContext.estimated_price.toFixed(2)}. ` : '') +
+          (scanContext.estimated_price ? `The price is ${formatCurrency(scanContext.estimated_price)}. ` : '') +
           `What do you think about this purchase?`;
       } catch {
         // Invalid JSON, ignore
@@ -211,6 +236,7 @@ export default function FaithScreen() {
 
   const handleNewChat = () => {
     startNewSession();
+    inputRef.current?.focus();
   };
 
   const handleSelectSession = (session: ChatSession) => {
@@ -219,6 +245,7 @@ export default function FaithScreen() {
 
   const handleSend = () => {
     if (inputText.trim()) {
+      sounds.playSend();
       sendMessage();
     }
   };
@@ -237,17 +264,11 @@ export default function FaithScreen() {
         { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG, base64: true }
       );
 
-      const response = await fetch(`${API_BASE_URL}/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          image_base64: manipulated.base64,
-          media_type: 'image/jpeg',
-          user_id: userId,
-        }),
+      const { data } = await apiPost<{ success: boolean; analysis?: AnalysisResult; error?: string }>('/analyze', {
+        image_base64: manipulated.base64,
+        media_type: 'image/jpeg',
       });
-      const data = await response.json();
-      if (data.success && data.analysis) {
+      if (data?.success && data.analysis) {
         const a = { ...data.analysis };
 
         if (a.product_barcode) {
@@ -266,7 +287,7 @@ export default function FaithScreen() {
 
         const msg =
           `I just scanned a product: ${a.product_identified}.` +
-          (a.estimated_price ? ` Estimated price: £${Number(a.estimated_price).toFixed(2)}.` : '') +
+          (a.estimated_price ? ` Estimated price: ${formatCurrency(Number(a.estimated_price))}.` : '') +
           ` It scored ${a.overall_score}/100 — ${a.verdict} What do you think about this purchase?`;
         sendMessage(msg);
       }
@@ -302,7 +323,7 @@ export default function FaithScreen() {
             {profile?.photo_url ? (
               <Image source={{ uri: profile.photo_url }} style={styles.avatarImage} />
             ) : (
-              <LinearGradient colors={['#005FCC', '#00C2FF']} style={styles.avatarGradient}>
+              <LinearGradient colors={t.gradients.avatar} style={styles.avatarGradient}>
                 <View style={styles.avatarShine} />
                 <Text style={styles.avatarText}>{initials}</Text>
               </LinearGradient>
@@ -316,6 +337,8 @@ export default function FaithScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={0}
       >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.keyboardDismissWrapper}>
         {/* Messages or Empty State */}
         {isLoadingSession ? (
           <View style={styles.emptyState}>
@@ -327,7 +350,7 @@ export default function FaithScreen() {
           <View style={styles.emptyState}>
             <View style={styles.emptyBadge}>
               <LinearGradient
-                colors={['#00C2FF', '#005FCC', '#004AAD']}
+                colors={t.gradients.badge}
                 locations={[0, 0.6, 1]}
                 style={styles.emptyBadgeGradient}
               >
@@ -353,6 +376,7 @@ export default function FaithScreen() {
             onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
             showsVerticalScrollIndicator={false}
             keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
           >
             {/* Date divider */}
             <View style={styles.dateDivider}>
@@ -373,7 +397,7 @@ export default function FaithScreen() {
                 ) : (
                   <View style={styles.assistantMessageContainer}>
                     <View style={styles.faithAvatar}>
-                      <LinearGradient colors={['#00C2FF', '#005FCC']} style={styles.faithAvatarGradient}>
+                      <LinearGradient colors={t.gradients.avatarReversed} style={styles.faithAvatarGradient}>
                         <Text style={styles.faithAvatarText}>F</Text>
                       </LinearGradient>
                     </View>
@@ -398,7 +422,7 @@ export default function FaithScreen() {
                                   </View>
                                   <View style={styles.insightBarBg}>
                                     <LinearGradient
-                                      colors={['#005FCC', '#00C2FF']}
+                                      colors={t.gradients.avatar}
                                       start={{ x: 0, y: 0 }}
                                       end={{ x: 1, y: 0 }}
                                       style={[styles.insightBar, { width: `${item.pct}%` }]}
@@ -444,6 +468,7 @@ export default function FaithScreen() {
         )}
 
         <BottomInputBar
+          ref={inputRef}
           activeScreen="faith"
           placeholder="Ask Faith anything..."
           value={inputText}
@@ -463,6 +488,8 @@ export default function FaithScreen() {
           }}
           bottomInset={insets.bottom}
         />
+      </View>
+      </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
 
       <ComingSoonModal
@@ -497,13 +524,16 @@ export default function FaithScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#005FCC',
+    backgroundColor: t.background,
     overflow: 'hidden',
   },
   keyboardView: {
+    flex: 1,
+  },
+  keyboardDismissWrapper: {
     flex: 1,
   },
   header: {
@@ -526,23 +556,23 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: t.type.headline,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
     letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.caption,
+    color: t.textFaint,
     marginTop: 2,
   },
   newChatButton: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: t.overlaySubtle,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -552,7 +582,7 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.6)',
+    borderColor: t.textMuted,
   },
   avatarGradient: {
     flex: 1,
@@ -564,9 +594,9 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   avatarText: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
   avatarShine: {
     ...StyleSheet.absoluteFillObject,
@@ -586,7 +616,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     overflow: 'hidden',
     marginBottom: 12,
-    shadowColor: 'rgba(0,95,204,0.35)',
+    shadowColor: t.shadowBrand,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 1,
     shadowRadius: 32,
@@ -597,19 +627,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: t.type.title,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
   },
   emptySubtitle: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: t.type.bodySmall,
+    color: t.textMuted,
     marginTop: 4,
   },
   suggestionLabel: {
-    fontSize: 11,
+    fontSize: t.type.captionSmall,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.4)',
+    color: t.textGhost,
     letterSpacing: 1.5,
     marginTop: 24,
     marginBottom: 8,
@@ -623,21 +653,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: t.overlayMedium,
   },
   suggestionText: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.8)',
+    fontSize: t.type.bodySmall,
+    color: t.textSecondary,
   },
   loadingSpinner: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadingText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: t.type.bodyCompact,
+    color: t.textMuted,
   },
   typingContainer: {
     flexDirection: 'row',
@@ -646,13 +676,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   typingBubble: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: t.surfaceCard,
     borderRadius: 18,
     borderBottomLeftRadius: 4,
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: t.overlayBorder,
   },
   typingDots: {
     flexDirection: 'row',
@@ -664,7 +694,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: t.textNear,
   },
   messagesContainer: {
     flex: 1,
@@ -678,15 +708,15 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   datePill: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
   },
   dateText: {
-    fontSize: 11,
+    fontSize: t.type.captionSmall,
     fontWeight: '500',
-    color: 'rgba(255,255,255,0.8)',
+    color: t.textSecondary,
   },
   userMessageContainer: {
     alignItems: 'flex-end',
@@ -694,24 +724,24 @@ const styles = StyleSheet.create({
   },
   userBubble: {
     maxWidth: '75%',
-    backgroundColor: '#2F80ED',
+    backgroundColor: t.secondary,
     borderRadius: 18,
     borderBottomRightRadius: 4,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    shadowColor: 'rgba(0,95,204,0.2)',
+    shadowColor: t.shadowBrandSoft,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 1,
     shadowRadius: 6,
   },
   userText: {
-    fontSize: 14,
-    color: '#fff',
-    lineHeight: 20,
+    fontSize: t.type.bodyCompact,
+    color: t.textPrimary,
+    lineHeight: t.line.body,
   },
   userTime: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.35)',
+    fontSize: t.type.tiny,
+    color: t.textGhost,
     marginTop: 4,
     marginRight: 8,
   },
@@ -726,7 +756,7 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: t.shadowBase,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -737,47 +767,47 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   faithAvatarText: {
-    fontSize: 14,
+    fontSize: t.type.bodyCompact,
     fontWeight: '700',
-    color: '#fff',
+    color: t.textPrimary,
   },
   assistantBubbleContainer: {
     maxWidth: '80%',
   },
   assistantBubble: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: t.surfaceCard,
     borderRadius: 18,
     borderBottomLeftRadius: 4,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
-    shadowColor: 'rgba(0,0,0,0.06)',
+    borderColor: t.overlayBorder,
+    shadowColor: t.shadowSoft,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 1,
     shadowRadius: 6,
   },
   assistantText: {
-    fontSize: 14,
-    color: '#1a1a1a',
-    lineHeight: 20,
+    fontSize: t.type.bodyCompact,
+    color: t.textOnSurface,
+    lineHeight: t.line.body,
   },
   boldText: {
     fontWeight: '700',
   },
   assistantTime: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.35)',
+    fontSize: t.type.tiny,
+    color: t.textGhost,
     marginTop: 4,
     marginLeft: 8,
   },
   insightCard: {
     marginTop: 12,
-    backgroundColor: 'rgba(0,95,204,0.08)',
+    backgroundColor: t.primaryTintFaint,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(0,95,204,0.1)',
+    borderColor: t.primaryTintSubtle,
   },
   insightHeader: {
     flexDirection: 'row',
@@ -789,14 +819,14 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 6,
-    backgroundColor: 'rgba(0,95,204,0.1)',
+    backgroundColor: t.primaryTintSubtle,
     alignItems: 'center',
     justifyContent: 'center',
   },
   insightTitle: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '700',
-    color: '#005FCC',
+    color: t.primaryOnSurface,
   },
   insightItems: {
     gap: 8,
@@ -810,17 +840,17 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   insightItemLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: t.type.caption,
+    color: t.textOnSurfaceSecondary,
   },
   insightItemAmount: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
   },
   insightBarBg: {
     height: 6,
-    backgroundColor: 'rgba(0,95,204,0.1)',
+    backgroundColor: t.primaryTintSubtle,
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -835,17 +865,17 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,95,204,0.1)',
+    borderTopColor: t.primaryTintSubtle,
   },
   insightTotalLabel: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '700',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
   },
   insightTotalAmount: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '700',
-    color: '#005FCC',
+    color: t.primaryOnSurface,
   },
   quickReplies: {
     flexDirection: 'row',
@@ -857,18 +887,18 @@ const styles = StyleSheet.create({
   quickReplyButton: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: t.textNear,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
-    shadowColor: '#000',
+    borderColor: t.overlayBorder,
+    shadowColor: t.shadowBase,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
   },
   quickReplyText: {
-    fontSize: 13,
+    fontSize: t.type.bodySmall,
     fontWeight: '500',
-    color: '#2F80ED',
+    color: t.secondary,
   },
 });

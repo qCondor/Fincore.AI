@@ -106,8 +106,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
 
       // Sync privacy-related prefs to backend for server-side use
       if (userId && (key === 'personalizedInsights' || key === 'shareUsageData' || key === 'personalizedAds')) {
-        apiPatch(`/profile/${userId}`, {
-          user_id: userId,
+        apiPatch('/profile', {
           security_prefs: {
             personalizedInsights: newPrefs.personalizedInsights,
             shareUsageData: newPrefs.shareUsageData,

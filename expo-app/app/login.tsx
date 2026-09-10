@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,8 @@ import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as AuthSession from 'expo-auth-session';
 import { useUser } from '../contexts/UserContext';
-import { GOOGLE_CLIENT_ID, MICROSOFT_CLIENT_ID, MICROSOFT_TENANT_ID } from '../config';
+import { GOOGLE_CLIENT_ID, GOOGLE_IOS_URL_SCHEME, GOOGLE_REDIRECT_URI, MICROSOFT_CLIENT_ID, MICROSOFT_TENANT_ID } from '../config';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -61,18 +62,21 @@ const slides = [
 ];
 
 function SlideIcon({ type }: { type: string }) {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
+
   if (type === 'brain') {
     return (
       <View style={styles.iconCircle}>
         <Svg width={80} height={80} viewBox="0 0 80 80">
-          <Circle cx={40} cy={40} r={30} stroke="rgba(255,255,255,0.2)" strokeWidth={1.5} fill="none" />
+          <Circle cx={40} cy={40} r={30} stroke={t.overlayMedium} strokeWidth={1.5} fill="none" />
           <Path
             d="M40 20C40 20 25 32 25 44C25 52 31.5 58 40 58C48.5 58 55 52 55 44C55 32 40 20 40 20Z"
-            fill="rgba(255,255,255,0.1)"
-            stroke="rgba(255,255,255,0.3)"
+            fill={t.overlayFaint}
+            stroke={t.overlayStrong}
             strokeWidth={1.5}
           />
-          <Circle cx={40} cy={38} r={5} fill="white" opacity={0.9} />
+          <Circle cx={40} cy={38} r={5} fill={t.textPrimary} opacity={0.9} />
         </Svg>
       </View>
     );
@@ -81,10 +85,10 @@ function SlideIcon({ type }: { type: string }) {
     return (
       <View style={styles.iconCircle}>
         <Svg width={80} height={80} viewBox="0 0 80 80">
-          <Rect x={12} y={18} width={56} height={44} rx={12} stroke="rgba(255,255,255,0.25)" strokeWidth={1.5} fill="rgba(255,255,255,0.05)" />
-          <Circle cx={30} cy={38} r={3} fill="rgba(255,255,255,0.5)" />
-          <Circle cx={42} cy={38} r={3} fill="rgba(255,255,255,0.5)" />
-          <Circle cx={54} cy={38} r={3} fill="rgba(255,255,255,0.5)" />
+          <Rect x={12} y={18} width={56} height={44} rx={12} stroke={t.overlayMedium} strokeWidth={1.5} fill={t.overlayHairline} />
+          <Circle cx={30} cy={38} r={3} fill={t.textFaint} />
+          <Circle cx={42} cy={38} r={3} fill={t.textFaint} />
+          <Circle cx={54} cy={38} r={3} fill={t.textFaint} />
         </Svg>
       </View>
     );
@@ -93,10 +97,10 @@ function SlideIcon({ type }: { type: string }) {
     return (
       <View style={styles.iconCircle}>
         <Svg width={80} height={80} viewBox="0 0 80 80">
-          <Circle cx={40} cy={40} r={28} stroke="rgba(255,255,255,0.2)" strokeWidth={1.5} fill="none" />
-          <SvgText x={40} y={36} textAnchor="middle" fill="white" fontSize={10} fontWeight="600" opacity={0.4}>£180</SvgText>
-          <Line x1={24} y1={42} x2={56} y2={42} stroke="rgba(255,255,255,0.2)" strokeWidth={1} />
-          <SvgText x={40} y={56} textAnchor="middle" fill="white" fontSize={18} fontWeight="700">£310</SvgText>
+          <Circle cx={40} cy={40} r={28} stroke={t.overlayMedium} strokeWidth={1.5} fill="none" />
+          <SvgText x={40} y={36} textAnchor="middle" fill={t.textPrimary} fontSize={10} fontWeight="600" opacity={0.4}>£180</SvgText>
+          <Line x1={24} y1={42} x2={56} y2={42} stroke={t.overlayMedium} strokeWidth={1} />
+          <SvgText x={40} y={56} textAnchor="middle" fill={t.textPrimary} fontSize={18} fontWeight="700">£310</SvgText>
         </Svg>
       </View>
     );
@@ -105,9 +109,11 @@ function SlideIcon({ type }: { type: string }) {
 }
 
 export default function LoginScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setUserName, setAuthProvider, setUserEmail } = useUser();
+  const { setUserName, setAuthProvider, setUserEmail, authenticateWithProvider, authenticateAsDevUser } = useUser();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
@@ -117,6 +123,18 @@ export default function LoginScreen() {
     scheme: 'fincore',
   });
 
+  // Google's iOS client only accepts the reversed-client-ID scheme, so it gets
+  // its own redirect. `native` is used in dev-client/standalone builds so the
+  // URI is stable (no Metro host appended) and matches what the token
+  // exchange sends below.
+  const googleRedirectUri = AuthSession.makeRedirectUri({
+    scheme: GOOGLE_IOS_URL_SCHEME,
+    path: 'oauthredirect',
+    native: GOOGLE_REDIRECT_URI,
+  });
+
+  // TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
+  /*
   const [msRequest, msResponse, msPromptAsync] = AuthSession.useAuthRequest(
     {
       clientId: MICROSOFT_CLIENT_ID,
@@ -130,12 +148,25 @@ export default function LoginScreen() {
     {
       clientId: GOOGLE_CLIENT_ID,
       scopes: ['openid', 'profile', 'email'],
-      redirectUri,
+      redirectUri: googleRedirectUri,
     },
     googleDiscovery
   );
+  */
 
-  const handleAuthSuccess = async (provider: 'google' | 'apple' | 'microsoft', name?: string, email?: string) => {
+  const handleAuthSuccess = async (
+    provider: 'google' | 'apple' | 'microsoft',
+    identityToken: string | null,
+    name?: string,
+    email?: string,
+    authorizationCode?: string | null
+  ) => {
+    const authenticated = await authenticateWithProvider(provider, identityToken, authorizationCode);
+    if (!authenticated) {
+      setIsLoading(null);
+      Alert.alert('Authentication Failed', 'Could not verify your sign-in. Please try again.');
+      return;
+    }
     await setAuthProvider(provider);
     if (name) await setUserName(name);
     if (email) await setUserEmail(email);
@@ -143,6 +174,8 @@ export default function LoginScreen() {
     router.replace('/info');
   };
 
+  // TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
+  /*
   const handleGoogleAuth = async () => {
     if (!termsAccepted || !googleRequest) return;
     setIsLoading('google');
@@ -158,7 +191,7 @@ export default function LoginScreen() {
           body: new URLSearchParams({
             client_id: GOOGLE_CLIENT_ID,
             code: result.params.code,
-            redirect_uri: redirectUri,
+            redirect_uri: googleRedirectUri,
             grant_type: 'authorization_code',
             code_verifier: googleRequest.codeVerifier || '',
           }).toString(),
@@ -175,6 +208,7 @@ export default function LoginScreen() {
 
           await handleAuthSuccess(
             'google',
+            tokens.id_token ?? null,
             profile.name,
             profile.email
           );
@@ -224,6 +258,7 @@ export default function LoginScreen() {
 
           await handleAuthSuccess(
             'microsoft',
+            tokens.id_token ?? null,
             profile.displayName || profile.givenName,
             profile.mail || profile.userPrincipalName
           );
@@ -257,13 +292,42 @@ export default function LoginScreen() {
         ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
         : undefined;
 
-      await handleAuthSuccess('apple', fullName || undefined, credential.email || undefined);
+      await handleAuthSuccess(
+        'apple',
+        credential.identityToken,
+        fullName || undefined,
+        credential.email || undefined,
+        credential.authorizationCode
+      );
     } catch (e: any) {
       setIsLoading(null);
       if (e.code !== 'ERR_REQUEST_CANCELED') {
         Alert.alert('Authentication Failed', 'Could not sign in with Apple. Please try again.');
       }
     }
+  };
+
+  */
+
+  // TEMP: dev-only bypass. Only rendered when __DEV__ is true (never in a
+  // release/TestFlight build). Mints a real server-signed session via the
+  // backend's ENVIRONMENT=development-gated /auth/dev endpoint.
+  const handleDevSkip = async () => {
+    if (!__DEV__ || !termsAccepted) return;
+    setIsLoading('dev');
+    const ok = await authenticateAsDevUser();
+    if (!ok) {
+      setIsLoading(null);
+      Alert.alert(
+        'Dev sign-in failed',
+        'Backend rejected /auth/dev. Is the server running with ENVIRONMENT=development?'
+      );
+      return;
+    }
+    await setUserName('Dev Tester');
+    await setUserEmail('dev@fincore.local');
+    setIsLoading(null);
+    router.replace('/info');
   };
 
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -291,7 +355,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#56CCF2', '#2F80ED', '#005FCC']}
+        colors={t.gradients.main}
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -332,7 +396,29 @@ export default function LoginScreen() {
                 <Text style={styles.slideSubtitle}>Sign in to get started</Text>
 
                 <View style={styles.authCard}>
-                  <BlurView intensity={20} tint="dark" style={styles.authCardBlur}>
+                  <BlurView intensity={20} tint={t.blurTint} style={styles.authCardBlur}>
+                    {/* TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
+                        Google / Microsoft / Apple sign-in buttons are commented out below.
+                        Remove the __DEV__ "Skip Sign-In" block when re-enabling. */}
+                    {__DEV__ && (
+                      <TouchableOpacity
+                        style={[styles.authButton, styles.devSkipButton, (!termsAccepted || isLoading) && styles.authButtonDisabled]}
+                        onPress={handleDevSkip}
+                        disabled={!termsAccepted || !!isLoading}
+                      >
+                        <View style={styles.authIconContainer}>
+                          {isLoading === 'dev' ? (
+                            <ActivityIndicator size="small" color={t.textOnSurface} />
+                          ) : (
+                            <Text style={styles.devSkipIcon}>⚙</Text>
+                          )}
+                        </View>
+                        <Text style={[styles.authButtonText, (!termsAccepted || isLoading) && styles.authButtonTextDisabled]}>
+                          Skip Sign-In (dev only)
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    {/* TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
                     <TouchableOpacity
                       style={[styles.authButton, (!termsAccepted || isLoading) && styles.authButtonDisabled]}
                       onPress={handleGoogleAuth}
@@ -400,6 +486,7 @@ export default function LoginScreen() {
                         </Text>
                       </TouchableOpacity>
                     )}
+                    */}
 
                     <View style={styles.termsRow}>
                       <TouchableOpacity
@@ -442,7 +529,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -454,17 +541,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   slideTitle: {
-    fontSize: 28,
+    fontSize: t.type.headline,
     fontWeight: '700',
-    color: '#fff',
-    lineHeight: 32,
+    color: t.textPrimary,
+    lineHeight: t.line.headline,
     letterSpacing: -0.5,
     marginBottom: 12,
   },
   slideSubtitle: {
-    fontSize: 17,
-    color: 'rgba(255,255,255,0.65)',
-    lineHeight: 24,
+    fontSize: t.type.subtitle,
+    color: t.textMuted,
+    lineHeight: t.line.loose,
     marginBottom: 28,
   },
   iconContainer: {
@@ -476,7 +563,7 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -485,27 +572,27 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     height: 50,
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryButtonText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#2F80ED',
+    color: t.secondary,
   },
   secondaryButton: {
     height: 50,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.overlaySubtle,
     borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   secondaryButtonText: {
-    fontSize: 15,
+    fontSize: t.type.body,
     fontWeight: '600',
-    color: '#fff',
+    color: t.textPrimary,
   },
   authCard: {
     flex: 1,
@@ -515,22 +602,30 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     padding: 20,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
   },
   authButton: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 48,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: t.surfaceRaised,
     borderRadius: 24,
     paddingHorizontal: 16,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.9)',
+    borderColor: t.textNear,
+  },
+  // TEMP: dev-only "Skip Sign-In" styling — remove with the __DEV__ block above.
+  devSkipButton: {
+    borderStyle: 'dashed',
+  },
+  devSkipIcon: {
+    fontSize: 16,
+    color: t.textOnSurface,
   },
   authButtonDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.4)',
-    borderColor: 'rgba(255,255,255,0.5)',
+    backgroundColor: t.textGhost,
+    borderColor: t.textFaint,
   },
   authIconContainer: {
     width: 22,
@@ -540,12 +635,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   authButtonText: {
-    fontSize: 14,
+    fontSize: t.type.bodyCompact,
     fontWeight: '500',
-    color: '#1a1a1a',
+    color: t.textOnSurface,
   },
   authButtonTextDisabled: {
-    color: '#666',
+    color: t.textOnSurfaceSecondary,
   },
   termsRow: {
     flexDirection: 'row',
@@ -563,26 +658,26 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.5)',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderColor: t.textFaint,
+    backgroundColor: t.overlaySubtle,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 2,
   },
   checkboxChecked: {
-    backgroundColor: '#2F80ED',
-    borderColor: '#2F80ED',
+    backgroundColor: t.secondary,
+    borderColor: t.secondary,
   },
   checkmark: {
-    color: '#fff',
-    fontSize: 10,
+    color: t.textPrimary,
+    fontSize: t.type.tiny,
     fontWeight: '700',
   },
   termsText: {
     flex: 1,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.75)',
-    lineHeight: 18,
+    fontSize: t.type.caption,
+    color: t.textTertiary,
+    lineHeight: t.line.compact,
   },
   termsLink: {
     textDecorationLine: 'underline',
@@ -591,13 +686,13 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: t.overlayFaint,
     borderRadius: 20,
     alignItems: 'center',
   },
   securityText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.65)',
+    fontSize: t.type.caption,
+    color: t.textMuted,
     fontWeight: '500',
   },
 });

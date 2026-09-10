@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
+import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -109,33 +110,47 @@ const LIKERT_OPTIONS = [
 ];
 
 export default function SurveyScreen() {
+  const t = useTheme();
+  const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const params = useLocalSearchParams<{ userName?: string }>();
   const insets = useSafeAreaInsets();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const slideAnim = useRef(new Animated.Value(0)).current;
+  // True while the slide-out/slide-in transition is running. A second tap in
+  // that window used to queue a second `q => q + 1`, skipping a question and,
+  // on the penultimate question, indexing past the end of `questions`.
+  const isAdvancing = useRef(false);
 
-  const question = questions[currentQuestion];
+  const lastIndex = questions.length - 1;
+  // Defensive clamp: `questions` is static so this only matters if state is
+  // ever pushed out of range, but it guarantees `question` is always defined.
+  const question = questions[Math.min(currentQuestion, lastIndex)];
   const progress = currentQuestion / questions.length;
 
   const handleAnswer = (value: number) => {
+    if (isAdvancing.current) return;
+
     const newAnswers = { ...answers, [currentQuestion]: value };
     setAnswers(newAnswers);
 
-    if (currentQuestion < questions.length - 1) {
+    if (currentQuestion < lastIndex) {
+      isAdvancing.current = true;
       Animated.timing(slideAnim, {
         toValue: -SCREEN_WIDTH,
         duration: 200,
         useNativeDriver: true,
       }).start(() => {
         slideAnim.setValue(SCREEN_WIDTH);
-        setCurrentQuestion(q => q + 1);
+        setCurrentQuestion(q => Math.min(q + 1, lastIndex));
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 200,
           useNativeDriver: true,
-        }).start();
+        }).start(() => {
+          isAdvancing.current = false;
+        });
       });
     } else {
       const payload = questions.map((q, idx) => ({
@@ -154,6 +169,8 @@ export default function SurveyScreen() {
 
   const handleBack = () => {
     slideAnim.stopAnimation();
+    slideAnim.setValue(0);
+    isAdvancing.current = false;
     if (currentQuestion > 0) {
       setCurrentQuestion(currentQuestion - 1);
     } else {
@@ -164,7 +181,7 @@ export default function SurveyScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#56CCF2', '#2F80ED', '#005FCC']}
+        colors={t.gradients.main}
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -183,7 +200,7 @@ export default function SurveyScreen() {
           <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
             <Path
               d="M19 12H5M5 12L12 19M5 12L12 5"
-              stroke="white"
+              stroke={t.textPrimary}
               strokeWidth={2}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -219,7 +236,7 @@ export default function SurveyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -232,12 +249,12 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: t.overlayMedium,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: t.textPrimary,
     borderRadius: 1.5,
   },
   content: {
@@ -256,29 +273,29 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   questionNumber: {
-    fontSize: 12,
+    fontSize: t.type.caption,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.5)',
+    color: t.textFaint,
     marginBottom: 12,
   },
   questionText: {
-    fontSize: 28,
+    fontSize: t.type.headline,
     fontWeight: '700',
-    color: '#fff',
-    lineHeight: 34,
+    color: t.textPrimary,
+    lineHeight: t.line.display,
     letterSpacing: -0.5,
     marginBottom: 8,
   },
   questionHint: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: t.type.body,
+    color: t.textFaint,
     marginBottom: 24,
   },
   optionsContainer: {
     gap: 10,
   },
   optionButton: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: t.textNear,
     borderRadius: 16,
     paddingVertical: 14,
     paddingHorizontal: 20,
@@ -286,16 +303,16 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   optionButtonSelected: {
-    backgroundColor: '#fff',
-    borderColor: '#2F80ED',
+    backgroundColor: t.textPrimary,
+    borderColor: t.secondary,
   },
   optionText: {
-    fontSize: 15,
-    color: '#1a1a1a',
-    lineHeight: 20,
+    fontSize: t.type.body,
+    color: t.textOnSurface,
+    lineHeight: t.line.body,
   },
   optionTextSelected: {
     fontWeight: '600',
-    color: '#2F80ED',
+    color: t.secondary,
   },
 });

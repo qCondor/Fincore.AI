@@ -58,7 +58,7 @@ export function useScanHistory({
     setError(null);
 
     const { data, error: fetchError } = await apiFetch<{ scans: ScanRecord[] }>(
-      `/users/${userId}/scans?limit=20`
+      '/users/scans?limit=20'
     );
 
     if (fetchError) {
