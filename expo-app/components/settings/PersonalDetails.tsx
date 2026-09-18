@@ -111,9 +111,10 @@ interface EditableRowProps {
   isLast?: boolean;
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   editable?: boolean;
+  placeholder?: string;
 }
 
-function EditableRow({ icon, label, value, onChangeText, isLast = false, keyboardType = 'default', editable = true }: EditableRowProps) {
+function EditableRow({ icon, label, value, onChangeText, isLast = false, keyboardType = 'default', editable = true, placeholder }: EditableRowProps) {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
 
@@ -126,6 +127,7 @@ function EditableRow({ icon, label, value, onChangeText, isLast = false, keyboar
           style={[styles.rowInput, !editable && styles.rowInputDisabled]}
           value={value}
           onChangeText={onChangeText}
+          placeholder={placeholder}
           placeholderTextColor={t.overlayStrong}
           keyboardType={keyboardType}
           editable={editable}
@@ -268,6 +270,7 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
           label="Full Name"
           value={fullName}
           onChangeText={handleFieldChange(setFullName)}
+          placeholder="Add your full name"
         />
         <EditableRow
           icon={<MailIcon />}
@@ -275,37 +278,43 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
           value={email}
           onChangeText={handleFieldChange(setEmail)}
           keyboardType="email-address"
+          placeholder="Add your email"
         />
         <EditableRow
           icon={<PhoneIcon />}
           label="Phone"
-          value={phone || '+44 7700 900 123'}
+          value={phone}
           onChangeText={handleFieldChange(setPhone)}
           keyboardType="phone-pad"
+          placeholder="Add your phone number"
         />
         <EditableRow
           icon={<CalendarIcon />}
           label="Date of Birth"
-          value={dob || '14 March 1991'}
+          value={dob}
           onChangeText={handleFieldChange(setDob)}
+          placeholder="DD/MM/YYYY"
         />
         <EditableRow
           icon={<MapPinIcon />}
           label="Address"
-          value={address || '22 Kings Road, London SW3'}
+          value={address}
           onChangeText={handleFieldChange(setAddress)}
+          placeholder="Add your address"
         />
         <EditableRow
           icon={<BriefcaseIcon />}
           label="Occupation"
-          value={occupation || 'Product Designer'}
+          value={occupation}
           onChangeText={handleFieldChange(setOccupation)}
+          placeholder="Add your occupation"
         />
         <EditableRow
           icon={<FlagIcon />}
           label="Nationality"
-          value={nationality || 'British'}
+          value={nationality}
           onChangeText={handleFieldChange(setNationality)}
+          placeholder="Add your nationality"
           isLast
         />
       </SettingsSection>

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useUser } from '../contexts/UserContext';
 import { useTheme, type Theme } from '../contexts/ThemeContext';
+import { apiPatch } from '../lib/api';
 
 const validateEmail = (email: string): boolean => {
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -99,6 +100,12 @@ export default function InfoScreen() {
     if (Object.keys(newErrors).length === 0) {
       await setUserName(name.trim());
       await setUserEmail(email.trim());
+      await apiPatch('/profile', {
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        dob: dob.trim(),
+      });
       router.replace({ pathname: '/survey', params: { userName: name.trim() } });
     }
   };

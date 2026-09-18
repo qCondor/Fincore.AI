@@ -443,6 +443,8 @@ export default function ProfileScreen() {
               { paddingTop: insets.top + 16, transform: [{ translateX: settingsSlide }] },
             ]}
           >
+            <WaveBackground prefix="settingsMenu" />
+
             <View style={styles.settingsHeader}>
               <TouchableOpacity style={styles.settingsCloseButton} onPress={closeSettingsMenu}>
                 <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={t.textPrimary} strokeWidth={2}>
@@ -541,6 +543,7 @@ export default function ProfileScreen() {
       <Modal visible={settingsPage === 'security'} animationType="slide" presentationStyle="fullScreen">
         <SecurityPrivacy
           onBack={() => setSettingsPage(null)}
+          signupPhone={profile?.phone}
           onDeleteAccount={deleteAccount}
           onDeleteSuccess={() => {
             setSettingsPage(null);

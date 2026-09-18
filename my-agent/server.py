@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import os
+import secrets
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ env_path = Path(__file__).parent / ".env"
 if env_path.exists():
     load_dotenv(env_path)
 
+import bcrypt
 import boto3
 from fastapi import FastAPI, HTTPException, Header, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +25,15 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 limiter = Limiter(key_func=get_remote_address)
-from auth import get_current_user, create_session_token, verify_apple, verify_google_id_token, verify_microsoft_id_token
+from auth import (
+    get_current_user,
+    create_session_token,
+    create_challenge_token,
+    verify_challenge_token,
+    verify_apple,
+    verify_google_id_token,
+    verify_microsoft_id_token,
+)
 from coach import stream_coach_response, save_profile, get_profile
 from scorer import score_survey
 from math_utils import calculate_psychology_cost
@@ -79,6 +89,60 @@ def _s3():
     if not hasattr(_s3, "_client"):
         _s3._client = boto3.client("s3")
     return _s3._client
+
+
+def _sms():
+    """Return a cached AWS End User Messaging SMS client."""
+    if not hasattr(_sms, "_client"):
+        _sms._client = boto3.client(
+            "pinpoint-sms-voice-v2",
+            region_name=os.getenv("AWS_REGION", "eu-west-2"),
+        )
+    return _sms._client
+
+
+def send_sms(phone_number: str, message: str) -> str:
+    """Send an SMS and return the provider message id."""
+    response = _sms().send_text_message(
+        DestinationPhoneNumber=phone_number,
+        OriginationIdentity=os.getenv("FINCORE_SMS_SENDER_ID", "FINCORE"),
+        MessageBody=message,
+        MessageType="TRANSACTIONAL",
+    )
+    return response["MessageId"]
+
+
+def issue_otp(user_id: str, profile: dict, phone_number: str, bucket: str) -> None:
+    """Generate a one-time code, store only its hash, and text it to the user."""
+    code = f"{secrets.randbelow(1000000):06d}"
+    # Store only a hash -- the profile JSON sits beside the user's personal
+    # details, so a readable OTP there would defeat the second factor.
+    profile["2fa_code_hash"] = bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
+    profile["2fa_code_expiry"] = datetime.utcnow().timestamp() + 300
+    profile.pop("2fa_code", None)
+    save_profile(user_id, profile, bucket)
+    send_sms(phone_number, f"{code} is your Fincore verification code. It expires in 5 minutes.")
+
+
+def consume_otp(user_id: str, profile: dict, code: str, bucket: str) -> None:
+    """Validate a one-time code and burn it. Raises HTTPException on failure."""
+    stored_hash = profile.get("2fa_code_hash")
+    if not stored_hash:
+        raise HTTPException(status_code=400, detail="No code requested")
+
+    if datetime.utcnow().timestamp() > profile.get("2fa_code_expiry", 0):
+        raise HTTPException(status_code=400, detail="Code expired")
+
+    if not bcrypt.checkpw(code.encode(), stored_hash.encode()):
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    profile.pop("2fa_code_hash", None)
+    profile.pop("2fa_code_expiry", None)
+    save_profile(user_id, profile, bucket)
+
+
+def mask_phone(phone_number: str) -> str:
+    return f"••• ••• {phone_number[-4:]}" if len(phone_number) >= 4 else "•••"
 
 
 def save_scan(user_id: str, scan_data: dict, bucket: str) -> str:
@@ -409,7 +473,16 @@ class ProviderAuthRequest(BaseModel):
 
 class ProviderAuthResponse(BaseModel):
     user_id: str
-    session_token: str
+    # Absent when 2FA is on: the caller must clear the SMS challenge first.
+    session_token: str | None = None
+    requires_2fa: bool = False
+    challenge_token: str | None = None
+    phone_hint: str | None = None
+
+
+class TwoFactorChallengeRequest(BaseModel):
+    challenge_token: str
+    code: str
 
 
 # TEMP (2026-09-10): dev-only session bypass for local testing.
@@ -424,16 +497,52 @@ if DEV_AUTH_ENABLED:
     logger.warning("ENVIRONMENT=development: /auth/dev session bypass is ENABLED. Never run production this way.")
 
 
+def complete_login(user_id: str, provider: str) -> ProviderAuthResponse:
+    """Issue a session, or an SMS challenge first when the user has 2FA on."""
+    profile = get_profile(user_id, BUCKET) or {}
+    phone = profile.get("2fa_phone")
+
+    if not (profile.get("2fa_enabled") and phone):
+        return ProviderAuthResponse(user_id=user_id, session_token=create_session_token(user_id, provider))
+
+    try:
+        issue_otp(user_id, profile, phone, BUCKET)
+    except Exception:
+        # Never fall back to issuing a session -- that would silently downgrade
+        # 2FA to nothing whenever the SMS provider is having a bad day.
+        logger.exception("Failed to send 2FA login code")
+        raise HTTPException(status_code=502, detail="Could not send verification code")
+
+    return ProviderAuthResponse(
+        user_id=user_id,
+        requires_2fa=True,
+        challenge_token=create_challenge_token(user_id, provider),
+        phone_hint=mask_phone(phone),
+    )
+
+
+@app.post("/auth/2fa/challenge", response_model=ProviderAuthResponse)
+@limiter.limit("5/minute")
+async def complete_2fa_challenge(request: Request, req: TwoFactorChallengeRequest):
+    """Exchange a 2FA challenge token plus the SMS code for a real session."""
+    user_id, provider = verify_challenge_token(req.challenge_token)
+
+    profile = get_profile(user_id, BUCKET)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    consume_otp(user_id, profile, req.code, BUCKET)
+
+    return ProviderAuthResponse(user_id=user_id, session_token=create_session_token(user_id, provider))
+
+
 @app.post("/auth/dev", response_model=ProviderAuthResponse)
 @limiter.limit("20/minute")
 async def dev_auth(request: Request):
     """Mint a real signed session for a fixed test user without a provider token."""
     if not DEV_AUTH_ENABLED:
         raise HTTPException(status_code=404, detail="Not Found")
-    return ProviderAuthResponse(
-        user_id=DEV_TEST_USER_ID,
-        session_token=create_session_token(DEV_TEST_USER_ID, "dev"),
-    )
+    return complete_login(DEV_TEST_USER_ID, "dev")
 
 
 @app.post("/auth/{provider}", response_model=ProviderAuthResponse)
@@ -457,9 +566,7 @@ async def provider_auth(provider: str, request: Request, req: ProviderAuthReques
     else:
         raise HTTPException(status_code=400, detail="Unknown provider")
 
-    user_id = f"{provider}:{subject}"
-    session_token = create_session_token(user_id, provider)
-    return ProviderAuthResponse(user_id=user_id, session_token=session_token)
+    return complete_login(f"{provider}:{subject}", provider)
 
 
 @app.get("/")
@@ -486,14 +593,20 @@ def submit_survey(req: SurveyRequest, user_id: str = Depends(get_current_user)):
         big_five = score_survey([a.model_dump() for a in req.answers])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    profile = {"user_id": user_id, "name": req.name, "big_five": big_five}
+    # Merge: retaking the survey must not wipe contact details, photo or prefs.
+    existing = get_profile(user_id, BUCKET) or {}
+    profile = {**existing, "user_id": user_id, "big_five": big_five}
+    if req.name:
+        profile["name"] = req.name
     save_profile(user_id, profile, BUCKET)
     return {"big_five": big_five}
 
 
 @app.post("/profile")
 def upsert_profile(req: ProfileRequest, user_id: str = Depends(get_current_user)):
-    save_profile(user_id, {**req.model_dump(), "user_id": user_id}, BUCKET)
+    existing = get_profile(user_id, BUCKET) or {}
+    merged = {**existing, **req.model_dump(exclude_none=True), "user_id": user_id}
+    save_profile(user_id, merged, BUCKET)
     return {"status": "ok"}
 
 
@@ -1137,8 +1250,6 @@ class ChangePasswordRequest(BaseModel):
 @app.post("/change-password")
 async def change_password(req: ChangePasswordRequest, user_id: str = Depends(get_current_user)):
     """Change user password (placeholder - integrate with your auth provider)."""
-    import bcrypt
-
     profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1157,30 +1268,34 @@ async def change_password(req: ChangePasswordRequest, user_id: str = Depends(get
 
 
 class TwoFactorSendRequest(BaseModel):
-    phone_number: str
+    # Optional: falls back to the phone captured at signup.
+    phone_number: str | None = None
 
 
 @app.post("/2fa/send-code")
-async def send_2fa_code(req: TwoFactorSendRequest, user_id: str = Depends(get_current_user)):
-    """Send a 2FA verification code via SMS (placeholder - integrate with Twilio/SNS)."""
-    import random
-
+@limiter.limit("3/minute")
+async def send_2fa_code(request: Request, req: TwoFactorSendRequest, user_id: str = Depends(get_current_user)):
+    """Send a 2FA enrolment code over SMS via AWS End User Messaging."""
     profile = get_profile(user_id, BUCKET)
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Generate 6-digit code
-    code = str(random.randint(100000, 999999))
+    phone = (req.phone_number or profile.get("phone") or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="No phone number on file")
 
-    # Store code with expiry (5 minutes)
-    profile["2fa_code"] = code
-    profile["2fa_code_expiry"] = (datetime.utcnow().timestamp() + 300)
-    profile["2fa_phone"] = req.phone_number
-    save_profile(user_id, profile, BUCKET)
+    # Held as pending until the code is verified. Committing it here would let
+    # an abandoned or failed re-enrolment repoint an already-working 2FA setup
+    # at an unreachable number, locking the user out at next sign-in.
+    profile["2fa_phone_pending"] = phone
 
-    # TODO: Send SMS via Twilio/SNS
-    # In production, integrate with a real SMS provider
-    logger.info(f"[2FA] Code requested for {user_id}")
+    try:
+        issue_otp(user_id, profile, phone, BUCKET)
+    except Exception:
+        logger.exception("Failed to send 2FA SMS")
+        raise HTTPException(status_code=502, detail="Could not send verification code")
+
+    logger.info(f"[2FA] Enrolment code sent for {user_id}")
 
     return {"status": "ok", "message": "Code sent"}
 
@@ -1197,22 +1312,13 @@ async def verify_2fa_code(request: Request, req: TwoFactorVerifyRequest, user_id
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
-    stored_code = profile.get("2fa_code")
-    expiry = profile.get("2fa_code_expiry", 0)
+    consume_otp(user_id, profile, req.code, BUCKET)
 
-    if not stored_code:
-        raise HTTPException(status_code=400, detail="No code requested")
+    pending = profile.pop("2fa_phone_pending", None)
+    if pending:
+        profile["2fa_phone"] = pending
 
-    if datetime.utcnow().timestamp() > expiry:
-        raise HTTPException(status_code=400, detail="Code expired")
-
-    if req.code != stored_code:
-        raise HTTPException(status_code=400, detail="Invalid code")
-
-    # Enable 2FA
     profile["2fa_enabled"] = True
-    profile.pop("2fa_code", None)
-    profile.pop("2fa_code_expiry", None)
     save_profile(user_id, profile, BUCKET)
 
     return {"status": "ok"}

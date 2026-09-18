@@ -37,6 +37,13 @@ MICROSOFT_ISSUER = f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}/v2.
 SESSION_SECRET = os.environ["FINCORE_SESSION_SECRET"]
 SESSION_ALGORITHM = "HS256"
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days
+CHALLENGE_TTL_SECONDS = 5 * 60
+
+# Both token kinds are signed with the same secret, so the type claim is the
+# only thing stopping a half-authenticated 2FA challenge token from being
+# replayed as a full session.
+SESSION_TOKEN_TYPE = "session"
+CHALLENGE_TOKEN_TYPE = "2fa_challenge"
 
 _JWKS_CACHE: dict[str, dict] = {}
 _JWKS_CACHE_TTL = 3600
@@ -172,16 +179,47 @@ def verify_microsoft_id_token(id_token: str) -> str:
 
 def create_session_token(user_id: str, provider: str) -> str:
     now = int(time.time())
-    payload = {"sub": user_id, "provider": provider, "iat": now, "exp": now + SESSION_TTL_SECONDS}
+    payload = {
+        "sub": user_id,
+        "provider": provider,
+        "typ": SESSION_TOKEN_TYPE,
+        "iat": now,
+        "exp": now + SESSION_TTL_SECONDS,
+    }
     return jose_jwt.encode(payload, SESSION_SECRET, algorithm=SESSION_ALGORITHM)
 
 
-def verify_session_token(token: str) -> str:
+def create_challenge_token(user_id: str, provider: str) -> str:
+    """Mint a short-lived token that proves provider identity but grants no API access."""
+    now = int(time.time())
+    payload = {
+        "sub": user_id,
+        "provider": provider,
+        "typ": CHALLENGE_TOKEN_TYPE,
+        "iat": now,
+        "exp": now + CHALLENGE_TTL_SECONDS,
+    }
+    return jose_jwt.encode(payload, SESSION_SECRET, algorithm=SESSION_ALGORITHM)
+
+
+def _decode(token: str, expected_type: str) -> dict:
     try:
         claims = jose_jwt.decode(token, SESSION_SECRET, algorithms=[SESSION_ALGORITHM])
     except JOSEError:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
-    return claims["sub"]
+    if claims.get("typ") != expected_type:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    return claims
+
+
+def verify_session_token(token: str) -> str:
+    return _decode(token, SESSION_TOKEN_TYPE)["sub"]
+
+
+def verify_challenge_token(token: str) -> tuple[str, str]:
+    """Return (user_id, provider) for a valid 2FA challenge token."""
+    claims = _decode(token, CHALLENGE_TOKEN_TYPE)
+    return claims["sub"], claims.get("provider", "unknown")
 
 
 def get_current_user(authorization: str | None = Header(None)) -> str:

@@ -13,8 +13,20 @@ type AuthProvider = 'anonymous' | 'google' | 'apple' | 'microsoft';
 
 interface ProviderAuthResponse {
   user_id: string;
-  session_token: string;
+  session_token: string | null;
+  requires_2fa?: boolean;
+  challenge_token?: string;
+  phone_hint?: string;
 }
+
+/**
+ * `two_factor_required` carries no session -- the caller must collect the SMS
+ * code and call completeTwoFactor before the user is actually signed in.
+ */
+export type AuthResult =
+  | { status: 'success' }
+  | { status: 'two_factor_required'; challengeToken: string; phoneHint?: string }
+  | { status: 'error' };
 
 interface UserContextValue {
   userId: string | null;
@@ -37,14 +49,16 @@ interface UserContextValue {
     provider: 'apple' | 'google' | 'microsoft',
     identityToken?: string | null,
     authorizationCode?: string | null
-  ) => Promise<boolean>;
+  ) => Promise<AuthResult>;
+  /** Exchanges a 2FA challenge token plus the SMS code for a real session. */
+  completeTwoFactor: (challengeToken: string, code: string) => Promise<AuthResult>;
   /**
    * TEMP (2026-09-10): dev-only bypass. Obtains a real server-signed session
    * for a fixed test user from the backend's /auth/dev endpoint, which only
    * exists when the server runs with ENVIRONMENT=development. Guarded by
    * __DEV__ so it is a no-op in release/TestFlight builds.
    */
-  authenticateAsDevUser: () => Promise<boolean>;
+  authenticateAsDevUser: () => Promise<AuthResult>;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
@@ -143,11 +157,28 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const establishSession = async (data: ProviderAuthResponse): Promise<AuthResult> => {
+    if (data.requires_2fa && data.challenge_token) {
+      return {
+        status: 'two_factor_required',
+        challengeToken: data.challenge_token,
+        phoneHint: data.phone_hint,
+      };
+    }
+
+    if (!data.session_token) return { status: 'error' };
+
+    await SecureStore.setItemAsync(USER_ID_KEY, data.user_id);
+    await setSessionToken(data.session_token);
+    setUserId(data.user_id);
+    return { status: 'success' };
+  };
+
   const authenticateWithProvider = async (
     provider: 'apple' | 'google' | 'microsoft',
     identityToken?: string | null,
     authorizationCode?: string | null
-  ): Promise<boolean> => {
+  ): Promise<AuthResult> => {
     try {
       const { data, error } = await apiPost<ProviderAuthResponse>(`/auth/${provider}`, {
         identity_token: identityToken ?? null,
@@ -156,34 +187,44 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
       if (error || !data) {
         console.error('Provider authentication failed:', error);
-        return false;
+        return { status: 'error' };
       }
 
-      await SecureStore.setItemAsync(USER_ID_KEY, data.user_id);
-      await setSessionToken(data.session_token);
-      setUserId(data.user_id);
-      return true;
+      return establishSession(data);
     } catch (error) {
       console.error('Provider authentication failed:', error);
-      return false;
+      return { status: 'error' };
     }
   };
 
-  const authenticateAsDevUser = async (): Promise<boolean> => {
-    if (!__DEV__) return false;
+  const completeTwoFactor = async (challengeToken: string, code: string): Promise<AuthResult> => {
+    try {
+      const { data, error } = await apiPost<ProviderAuthResponse>('/auth/2fa/challenge', {
+        challenge_token: challengeToken,
+        code,
+      });
+
+      if (error || !data) return { status: 'error' };
+
+      return establishSession(data);
+    } catch (error) {
+      console.error('2FA challenge failed:', error);
+      return { status: 'error' };
+    }
+  };
+
+  const authenticateAsDevUser = async (): Promise<AuthResult> => {
+    if (!__DEV__) return { status: 'error' };
     try {
       const { data, error } = await apiPost<ProviderAuthResponse>('/auth/dev', {});
       if (error || !data) {
         console.error('Dev authentication failed:', error);
-        return false;
+        return { status: 'error' };
       }
-      await SecureStore.setItemAsync(USER_ID_KEY, data.user_id);
-      await setSessionToken(data.session_token);
-      setUserId(data.user_id);
-      return true;
+      return establishSession(data);
     } catch (error) {
       console.error('Dev authentication failed:', error);
-      return false;
+      return { status: 'error' };
     }
   };
 
@@ -199,6 +240,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setUserEmail,
       setAuthProvider,
       authenticateWithProvider,
+      completeTwoFactor,
       authenticateAsDevUser,
       completeOnboarding,
       clearUser,

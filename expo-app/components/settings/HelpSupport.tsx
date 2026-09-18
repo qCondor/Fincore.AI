@@ -199,6 +199,30 @@ export function HelpSupport({ onBack, onTalkToFaith }: HelpSupportProps) {
     onTalkToFaith?.();
   };
 
+  const query = searchQuery.trim().toLowerCase();
+  const matches = (...fields: string[]) =>
+    !query || fields.some((field) => field.toLowerCase().includes(query));
+
+  const topicRows = ([
+    { key: 'gettingStarted', icon: <PlayIcon />, label: 'Getting started' },
+    { key: 'ocean', icon: <BrainIcon />, label: 'Understanding your OCEAN profile' },
+    { key: 'feelsLike', icon: <CameraIcon />, label: 'Feels Like Scan' },
+    { key: 'payments', icon: <CreditCardIcon />, label: 'Payments & billing' },
+    { key: 'security', icon: <ShieldIcon />, label: 'Account & security' },
+  ] as const).filter((row) => matches(row.label, HELP_TOPICS[row.key].content));
+
+  const contactRows = [
+    { key: 'contact', icon: <MessageIcon />, label: 'Contact us', onPress: handleContactUs },
+    { key: 'report', icon: <AlertCircleIcon />, label: 'Report a problem', onPress: handleReportProblem },
+  ].filter((row) => matches(row.label));
+
+  const legalRows = [
+    { key: 'terms', icon: <FileTextIcon />, label: 'Terms of Service', onPress: () => handleLegalLink('terms') },
+    { key: 'privacy', icon: <LockIcon />, label: 'Privacy Policy', onPress: () => handleLegalLink('privacy') },
+  ].filter((row) => matches(row.label));
+
+  const hasResults = topicRows.length > 0 || contactRows.length > 0 || legalRows.length > 0;
+
   return (
     <SettingsPage title="Help & Support" onBack={onBack}>
       <View style={styles.searchContainer}>
@@ -209,6 +233,9 @@ export function HelpSupport({ onBack, onTalkToFaith }: HelpSupportProps) {
           placeholderTextColor={t.textFaint}
           value={searchQuery}
           onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
         />
       </View>
 
@@ -232,23 +259,54 @@ export function HelpSupport({ onBack, onTalkToFaith }: HelpSupportProps) {
         </LinearGradient>
       </TouchableOpacity>
 
-      <SettingsSection title="Common Topics">
-        <SettingsRow icon={<PlayIcon />} label="Getting started" onPress={() => showTopic('gettingStarted')} />
-        <SettingsRow icon={<BrainIcon />} label="Understanding your OCEAN profile" onPress={() => showTopic('ocean')} />
-        <SettingsRow icon={<CameraIcon />} label="Feels Like Scan" onPress={() => showTopic('feelsLike')} />
-        <SettingsRow icon={<CreditCardIcon />} label="Payments & billing" onPress={() => showTopic('payments')} />
-        <SettingsRow icon={<ShieldIcon />} label="Account & security" onPress={() => showTopic('security')} isLast />
-      </SettingsSection>
+      {topicRows.length > 0 && (
+        <SettingsSection title="Common Topics">
+          {topicRows.map((row, i) => (
+            <SettingsRow
+              key={row.key}
+              icon={row.icon}
+              label={row.label}
+              onPress={() => showTopic(row.key)}
+              isLast={i === topicRows.length - 1}
+            />
+          ))}
+        </SettingsSection>
+      )}
 
-      <SettingsSection title="Contact">
-        <SettingsRow icon={<MessageIcon />} label="Contact us" onPress={handleContactUs} />
-        <SettingsRow icon={<AlertCircleIcon />} label="Report a problem" onPress={handleReportProblem} isLast />
-      </SettingsSection>
+      {contactRows.length > 0 && (
+        <SettingsSection title="Contact">
+          {contactRows.map((row, i) => (
+            <SettingsRow
+              key={row.key}
+              icon={row.icon}
+              label={row.label}
+              onPress={row.onPress}
+              isLast={i === contactRows.length - 1}
+            />
+          ))}
+        </SettingsSection>
+      )}
 
-      <SettingsSection title="Legal">
-        <SettingsRow icon={<FileTextIcon />} label="Terms of Service" onPress={() => handleLegalLink('terms')} />
-        <SettingsRow icon={<LockIcon />} label="Privacy Policy" onPress={() => handleLegalLink('privacy')} isLast />
-      </SettingsSection>
+      {legalRows.length > 0 && (
+        <SettingsSection title="Legal">
+          {legalRows.map((row, i) => (
+            <SettingsRow
+              key={row.key}
+              icon={row.icon}
+              label={row.label}
+              onPress={row.onPress}
+              isLast={i === legalRows.length - 1}
+            />
+          ))}
+        </SettingsSection>
+      )}
+
+      {!hasResults && (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateText}>No help topics match “{searchQuery.trim()}”</Text>
+          <Text style={styles.emptyStateHint}>Try a different search, or ask Faith above.</Text>
+        </View>
+      )}
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>Fincore v3.0 · Build 2026.05</Text>
@@ -311,6 +369,22 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     fontSize: t.type.bodySmall,
     color: t.textTertiary,
     marginTop: 2,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  emptyStateText: {
+    fontSize: t.type.body,
+    color: t.textTertiary,
+    textAlign: 'center',
+  },
+  emptyStateHint: {
+    fontSize: t.type.bodySmall,
+    color: t.textGhost,
+    textAlign: 'center',
+    marginTop: 6,
   },
   footer: {
     alignItems: 'center',

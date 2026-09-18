@@ -363,6 +363,7 @@ export default function ScanScreen() {
               style={styles.camera}
               facing="back"
               active={true}
+              enableTorch={flashOn}
             />
           </View>
 
@@ -403,13 +404,9 @@ export default function ScanScreen() {
               <CameraIcon />
             )}
           </TouchableOpacity>
-          <View style={styles.captureTextRow}>
-            <Text style={styles.tapToScan}>Tap to scan</Text>
-            <Text style={styles.dotSeparator}>·</Text>
-            <TouchableOpacity onPress={handleUpload}>
-              <Text style={styles.uploadLink}>upload photo</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity onPress={handleUpload}>
+            <Text style={styles.uploadLink}>upload photo</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -433,7 +430,6 @@ export default function ScanScreen() {
             }
           }
         }}
-        onMicPress={handleUpload}
         onNavigate={(screen) => {
           if (screen === 'profile') router.push('/profile');
           else if (screen === 'faith') router.push('/faith');
@@ -654,19 +650,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     borderWidth: 3,
     borderColor: t.primaryTintBorder,
     borderTopColor: t.primary,
-  },
-  captureTextRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  tapToScan: {
-    fontSize: t.type.bodySmall,
-    color: t.textFaint,
-  },
-  dotSeparator: {
-    fontSize: t.type.captionSmall,
-    color: t.overlayMedium,
   },
   uploadLink: {
     fontSize: t.type.bodySmall,

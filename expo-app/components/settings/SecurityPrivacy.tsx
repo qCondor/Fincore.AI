@@ -19,6 +19,8 @@ interface SecurityPrivacyProps {
   onBack: () => void;
   onDeleteAccount?: () => Promise<{ success: boolean; error?: string }>;
   onDeleteSuccess?: () => void;
+  /** Phone captured at signup, used to prefill 2FA setup. */
+  signupPhone?: string | null;
 }
 
 function FaceIdIcon() {
@@ -256,14 +258,19 @@ interface TwoFactorModalProps {
   onClose: () => void;
   userId: string;
   onEnabled: () => void;
+  signupPhone?: string | null;
 }
 
-function TwoFactorModal({ visible, onClose, userId, onEnabled }: TwoFactorModalProps) {
+function TwoFactorModal({ visible, onClose, userId, onEnabled, signupPhone }: TwoFactorModalProps) {
   const t = useTheme();
   const modalStyles = useMemo(() => makeModalStyles(t), [t]);
 
   const [step, setStep] = useState<'phone' | 'verify'>('phone');
   const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    if (visible && signupPhone) setPhone(signupPhone);
+  }, [visible, signupPhone]);
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -510,7 +517,7 @@ function ActiveSessionsModal({ visible, onClose, userId }: ActiveSessionsModalPr
   );
 }
 
-export function SecurityPrivacy({ onBack, onDeleteAccount, onDeleteSuccess }: SecurityPrivacyProps) {
+export function SecurityPrivacy({ onBack, onDeleteAccount, onDeleteSuccess, signupPhone }: SecurityPrivacyProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const { prefs, updatePref, biometricAvailable, refreshPrefs } = useSecurity();
   const { userId } = useUser();
@@ -740,6 +747,7 @@ export function SecurityPrivacy({ onBack, onDeleteAccount, onDeleteSuccess }: Se
             onClose={() => setShowTwoFactorModal(false)}
             userId={userId}
             onEnabled={() => updatePref('twoFactor', true)}
+            signupPhone={signupPhone}
           />
           <ActiveSessionsModal
             visible={showSessionsModal}

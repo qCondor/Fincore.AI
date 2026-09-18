@@ -11,6 +11,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -113,11 +115,62 @@ export default function LoginScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setUserName, setAuthProvider, setUserEmail, authenticateWithProvider, authenticateAsDevUser } = useUser();
+  const { setUserName, setAuthProvider, setUserEmail, authenticateWithProvider, completeTwoFactor, authenticateAsDevUser } = useUser();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Set when the backend answers a sign-in with a 2FA challenge instead of a
+  // session -- holds what to finish once the SMS code clears.
+  const [twoFactor, setTwoFactor] = useState<{
+    challengeToken: string;
+    phoneHint?: string;
+    provider: 'google' | 'apple' | 'microsoft' | 'dev';
+    name?: string;
+    email?: string;
+  } | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorError, setTwoFactorError] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  const finishSignIn = async (
+    provider: 'google' | 'apple' | 'microsoft' | 'dev',
+    name?: string,
+    email?: string
+  ) => {
+    if (provider !== 'dev') await setAuthProvider(provider);
+    if (name) await setUserName(name);
+    if (email) await setUserEmail(email);
+    setIsLoading(null);
+    router.replace('/info');
+  };
+
+  const handleVerifyTwoFactor = async () => {
+    if (!twoFactor || twoFactorCode.length !== 6) return;
+    setIsVerifying(true);
+    setTwoFactorError('');
+
+    const result = await completeTwoFactor(twoFactor.challengeToken, twoFactorCode);
+    setIsVerifying(false);
+
+    if (result.status !== 'success') {
+      setTwoFactorError('That code was not accepted. It may have expired.');
+      return;
+    }
+
+    const { provider, name, email } = twoFactor;
+    setTwoFactor(null);
+    setTwoFactorCode('');
+    await finishSignIn(provider, name, email);
+  };
+
+  const cancelTwoFactor = () => {
+    setTwoFactor(null);
+    setTwoFactorCode('');
+    setTwoFactorError('');
+    setIsLoading(null);
+  };
 
   const redirectUri = AuthSession.makeRedirectUri({
     scheme: 'fincore',
@@ -161,17 +214,27 @@ export default function LoginScreen() {
     email?: string,
     authorizationCode?: string | null
   ) => {
-    const authenticated = await authenticateWithProvider(provider, identityToken, authorizationCode);
-    if (!authenticated) {
+    const result = await authenticateWithProvider(provider, identityToken, authorizationCode);
+
+    if (result.status === 'error') {
       setIsLoading(null);
       Alert.alert('Authentication Failed', 'Could not verify your sign-in. Please try again.');
       return;
     }
-    await setAuthProvider(provider);
-    if (name) await setUserName(name);
-    if (email) await setUserEmail(email);
-    setIsLoading(null);
-    router.replace('/info');
+
+    if (result.status === 'two_factor_required') {
+      setIsLoading(null);
+      setTwoFactor({
+        challengeToken: result.challengeToken,
+        phoneHint: result.phoneHint,
+        provider,
+        name,
+        email,
+      });
+      return;
+    }
+
+    await finishSignIn(provider, name, email);
   };
 
   // TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
@@ -315,8 +378,9 @@ export default function LoginScreen() {
   const handleDevSkip = async () => {
     if (!__DEV__ || !termsAccepted) return;
     setIsLoading('dev');
-    const ok = await authenticateAsDevUser();
-    if (!ok) {
+    const result = await authenticateAsDevUser();
+
+    if (result.status === 'error') {
       setIsLoading(null);
       Alert.alert(
         'Dev sign-in failed',
@@ -324,10 +388,20 @@ export default function LoginScreen() {
       );
       return;
     }
-    await setUserName('Dev Tester');
-    await setUserEmail('dev@fincore.local');
-    setIsLoading(null);
-    router.replace('/info');
+
+    if (result.status === 'two_factor_required') {
+      setIsLoading(null);
+      setTwoFactor({
+        challengeToken: result.challengeToken,
+        phoneHint: result.phoneHint,
+        provider: 'dev',
+        name: 'Dev Tester',
+        email: 'dev@fincore.local',
+      });
+      return;
+    }
+
+    await finishSignIn('dev', 'Dev Tester', 'dev@fincore.local');
   };
 
   const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -525,11 +599,127 @@ export default function LoginScreen() {
           </View>
         ))}
       </ScrollView>
+
+      <Modal visible={twoFactor !== null} animationType="slide" transparent onRequestClose={cancelTwoFactor}>
+        <View style={styles.twoFactorOverlay}>
+          <View style={styles.twoFactorCard}>
+            <Text style={styles.twoFactorTitle}>Two-Factor Authentication</Text>
+            <Text style={styles.twoFactorDescription}>
+              {twoFactor?.phoneHint
+                ? `Enter the 6-digit code we sent to ${twoFactor.phoneHint}`
+                : 'Enter the 6-digit code we sent to your phone'}
+            </Text>
+
+            <TextInput
+              style={styles.twoFactorInput}
+              placeholder="000000"
+              placeholderTextColor={t.textFaint}
+              keyboardType="number-pad"
+              maxLength={6}
+              value={twoFactorCode}
+              onChangeText={(text) => {
+                setTwoFactorCode(text);
+                if (twoFactorError) setTwoFactorError('');
+              }}
+              autoFocus
+              textContentType="oneTimeCode"
+            />
+
+            {twoFactorError ? <Text style={styles.twoFactorError}>{twoFactorError}</Text> : null}
+
+            <TouchableOpacity
+              style={[styles.twoFactorButton, twoFactorCode.length !== 6 && styles.twoFactorButtonDisabled]}
+              onPress={handleVerifyTwoFactor}
+              disabled={twoFactorCode.length !== 6 || isVerifying}
+              activeOpacity={0.9}
+            >
+              {isVerifying ? (
+                <ActivityIndicator color={t.textPrimary} size="small" />
+              ) : (
+                <Text style={styles.twoFactorButtonText}>Verify</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={cancelTwoFactor} disabled={isVerifying}>
+              <Text style={styles.twoFactorCancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const makeStyles = (t: Theme) => StyleSheet.create({
+  twoFactorOverlay: {
+    flex: 1,
+    backgroundColor: t.shadowStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  twoFactorCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: t.background,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  twoFactorTitle: {
+    fontSize: t.type.title,
+    fontWeight: '700',
+    color: t.textPrimary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  twoFactorDescription: {
+    fontSize: t.type.bodySmall,
+    color: t.textTertiary,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  twoFactorInput: {
+    width: '100%',
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: t.overlayFaint,
+    backgroundColor: t.overlayHairline,
+    color: t.textPrimary,
+    fontSize: t.type.headline,
+    fontWeight: '700',
+    letterSpacing: 8,
+    textAlign: 'center',
+  },
+  twoFactorError: {
+    fontSize: t.type.bodySmall,
+    color: t.danger,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  twoFactorButton: {
+    width: '100%',
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: t.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  twoFactorButtonDisabled: {
+    backgroundColor: t.primaryTintStronger,
+  },
+  twoFactorButtonText: {
+    fontSize: t.type.bodyLarge,
+    fontWeight: '600',
+    color: t.textPrimary,
+  },
+  twoFactorCancel: {
+    fontSize: t.type.bodySmall,
+    color: t.textTertiary,
+    marginTop: 16,
+  },
   container: {
     flex: 1,
   },
