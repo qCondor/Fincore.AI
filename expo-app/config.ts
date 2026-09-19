@@ -2,6 +2,12 @@
 // For TestFlight: set EXPO_PUBLIC_API_URL in eas.json or use ngrok URL
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://35.178.139.5:8000';
 
+// SMS 2FA is fully implemented but the AWS account is still in the End User
+// Messaging SMS sandbox, which only delivers to pre-verified numbers -- a real
+// user enrolling would just get "could not send verification code". Set
+// EXPO_PUBLIC_TWO_FACTOR_ENABLED=true once production access is granted.
+export const TWO_FACTOR_ENABLED = process.env.EXPO_PUBLIC_TWO_FACTOR_ENABLED === 'true';
+
 // OAuth Client IDs (public, not secrets)
 export const GOOGLE_CLIENT_ID = '336431541348-hbifi1ohb2hsomhqqe2i289nm6oehdpg.apps.googleusercontent.com';
 // Reversed-client-ID URL scheme registered on the iOS OAuth client in Google Cloud Console.

@@ -14,6 +14,7 @@ import { useHaptics } from '../../lib/haptics';
 import { useSounds } from '../../lib/sounds';
 import { formatDate as formatAbsoluteDate } from '../../lib/format';
 import { useTheme, type Theme } from '../../contexts/ThemeContext';
+import { TWO_FACTOR_ENABLED } from '../../config';
 
 interface SecurityPrivacyProps {
   onBack: () => void;
@@ -660,14 +661,17 @@ export function SecurityPrivacy({ onBack, onDeleteAccount, onDeleteSuccess, sign
           icon={<KeyIcon />}
           label="Change Password"
           onPress={() => setShowPasswordModal(true)}
+          isLast={!TWO_FACTOR_ENABLED}
         />
-        <SettingsToggle
-          icon={<ShieldIcon />}
-          label="Two-Factor Authentication"
-          value={prefs.twoFactor}
-          onValueChange={handleTwoFactorToggle}
-          isLast
-        />
+        {TWO_FACTOR_ENABLED && (
+          <SettingsToggle
+            icon={<ShieldIcon />}
+            label="Two-Factor Authentication"
+            value={prefs.twoFactor}
+            onValueChange={handleTwoFactorToggle}
+            isLast
+          />
+        )}
       </SettingsSection>
 
       <SettingsSection title="App Protection">

@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '../config';
-import { getCachedSessionToken } from './session';
+import { getCachedSessionToken, handleSessionExpired } from './session';
 
 interface ApiResponse<T> {
   data: T | null;
@@ -33,6 +33,11 @@ export async function apiFetch<T>(
     if (!res.ok) {
       if (res.status === 404) {
         return { data: null, error: null };
+      }
+      // A rejected token never becomes valid again, so drop it and sign out
+      // rather than retrying it forever on every screen.
+      if (res.status === 401 && sessionToken) {
+        await handleSessionExpired();
       }
       throw new Error(`HTTP ${res.status}`);
     }

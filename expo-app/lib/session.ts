@@ -24,3 +24,15 @@ export async function clearSessionToken(): Promise<void> {
 export function getCachedSessionToken(): string | null {
   return cachedToken;
 }
+
+// Lets apiFetch tell UserContext a session died without importing React state.
+let sessionExpiredHandler: (() => void) | null = null;
+
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  sessionExpiredHandler = handler;
+}
+
+export async function handleSessionExpired(): Promise<void> {
+  await clearSessionToken();
+  sessionExpiredHandler?.();
+}

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { apiPost } from '../lib/api';
-import { loadSessionToken, setSessionToken, clearSessionToken } from '../lib/session';
+import { loadSessionToken, setSessionToken, clearSessionToken, setSessionExpiredHandler } from '../lib/session';
 
 const USER_ID_KEY = 'fincore_user_id';
 const USER_NAME_KEY = 'fincore_user_name';
@@ -84,9 +84,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         const storedProvider = await SecureStore.getItemAsync(AUTH_PROVIDER_KEY);
         const storedOnboarding = await SecureStore.getItemAsync(ONBOARDING_COMPLETED_KEY);
 
-        // Only trust a stored userId if it has a session token to back it --
-        // a userId with no verified session is not a logged-in user.
-        setUserId(storedSessionToken ? storedUserId : null);
+        // A stored identity with no session token behind it is not a logged-in
+        // user. Hydrating the name/email anyway desyncs the two notions of
+        // "signed in": the route guards key off userName/userEmail/provider
+        // and keep the user in the tabs, while every fetch keys off userId and
+        // silently does nothing -- an app that looks logged in and loads
+        // nothing. Drop the orphaned identity so the guards send them to login.
+        if (!storedSessionToken) {
+          await clearUser();
+          return;
+        }
+
+        setUserId(storedUserId);
         setUserNameState(storedUserName);
         setUserEmailState(storedEmail);
         setHasCompletedOnboarding(storedOnboarding === 'true');
@@ -102,6 +111,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     loadUser();
   }, []);
+
 
   const setUserName = async (name: string) => {
     try {
@@ -173,6 +183,17 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     setUserId(data.user_id);
     return { status: 'success' };
   };
+
+  // A 401 on an authenticated request means the stored token is dead --
+  // expired, revoked, or minted before a token-format change. Sign out fully:
+  // the splash gate routes on userName/userEmail/authProvider, so clearing
+  // userId alone would still drop the user into the tabs with a dead session.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      clearUser();
+    });
+    return () => setSessionExpiredHandler(null);
+  }, []);
 
   const authenticateWithProvider = async (
     provider: 'apple' | 'google' | 'microsoft',
