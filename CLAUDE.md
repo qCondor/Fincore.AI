@@ -140,6 +140,10 @@ cd my-agent && python agent.py "task"        # Dev agent
 
 # Testing
 cd my-agent && source venv/bin/activate && pytest tests/ -v
+
+# Deploy backend to production (uploads, installs deps, restarts, health-checks,
+# rolls back on failure). See GO_LIVE.md for how the server is laid out.
+./deploy.sh
 ```
 
 ## Testing

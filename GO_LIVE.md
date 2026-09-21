@@ -36,16 +36,37 @@ treated as a normal sign-in), so the data loss above is the visible symptom.
       it mints a session with no credentials)
 - [ ] Only then cut the TestFlight build
 
-### There is no deployment process, and that is its own problem
+### How deployment works (resolved 2026-09-21)
 
-There is no deploy script, no CI workflow, no container definition, and nothing in the repo
-documenting how code reaches `35.178.139.5`. Whoever set that server up did it by hand, and the
-method lives only in their head. That is a bus-factor risk independent of this release.
+Run `./deploy.sh` from the repo root. It uploads `my-agent/`, installs dependencies, restarts
+the service, health-checks it, and rolls back automatically if it does not come up.
 
-- [ ] Write down how the server is deployed and run (systemd unit? tmux? screen? bare
-      `uvicorn`?), and commit it alongside this file
-- [ ] Record where its `.env` lives and how it is updated
-- [ ] Add a one-command deploy script so this cannot drift again
+The production host is **not** a git checkout:
+
+| | |
+|---|---|
+| SSH | `ssh -i ~/Code/config-repo/fincore-key.pem ec2-user@35.178.139.5` |
+| Instance | `i-0b4614d659474a56e`, t3.small, eu-west-2b |
+| Code | `/opt/fincore/my-agent` — files copied in place |
+| Secrets | `/opt/fincore/.env` — loaded by systemd as `EnvironmentFile`, **not** in the repo |
+| Service | `fincore.service` — systemd, runs uvicorn as root on port 8000 |
+| Python | system `/usr/bin/python3.11`, packages installed globally (no venv) |
+
+**Three things that took production down on 2026-09-21**, all now handled by the script:
+
+1. The local `.env` must never be uploaded. `server.py` loads a `.env` next to itself, so the dev
+   one would set `ENVIRONMENT=development` in production and expose `/auth/dev` — a session for
+   anyone, no credentials. The script excludes it and asserts `/auth/dev` returns 404 afterwards.
+2. Dependencies must be installed on the server, not assumed from `requirements.txt`. The box had
+   drifted months behind, so an import moving to module scope became a boot failure.
+3. `systemctl is-active` saying `active` does not mean the API answers. The script curls the
+   health endpoint and rolls back if it never returns 200.
+
+Remaining improvements, not blocking:
+
+- [ ] Run the service as a non-root user in a venv rather than root with global packages
+- [ ] Prune old `/opt/fincore/my-agent.bak-*` directories occasionally
+- [ ] Consider CI so deploys do not depend on one laptop holding the SSH key
 
 ---
 
