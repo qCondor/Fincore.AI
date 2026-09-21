@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -52,12 +52,21 @@ export default function InfoScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setUserName, setUserEmail } = useUser();
+  const { userName, userEmail, setUserName, setUserEmail } = useUser();
   const [name, setName] = useState('');
   const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Prefill whatever the identity provider gave us. Guarded on empty so a
+  // late-arriving value cannot overwrite something the user has already typed,
+  // and left editable because provider names are often not what people want
+  // shown (and Apple returns a relay address rather than a real inbox).
+  useEffect(() => {
+    if (userName) setName(prev => prev || userName);
+    if (userEmail) setEmail(prev => prev || userEmail);
+  }, [userName, userEmail]);
 
   const handleDOBChange = (text: string) => {
     const formatted = formatDOB(text);

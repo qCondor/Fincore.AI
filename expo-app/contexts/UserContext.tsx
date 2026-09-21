@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { apiPost } from '../lib/api';
+import { apiPost, apiFetch } from '../lib/api';
 import { loadSessionToken, setSessionToken, clearSessionToken, setSessionExpiredHandler } from '../lib/session';
 
 const USER_ID_KEY = 'fincore_user_id';
@@ -53,6 +53,11 @@ interface UserContextValue {
   /** Exchanges a 2FA challenge token plus the SMS code for a real session. */
   completeTwoFactor: (challengeToken: string, code: string) => Promise<AuthResult>;
   /**
+   * Marks onboarding complete if the account already has saved Big Five scores.
+   * Returns true when the caller should skip straight to the tabs.
+   */
+  restoreOnboardingFromServer: () => Promise<boolean>;
+  /**
    * TEMP (2026-09-10): dev-only bypass. Obtains a real server-signed session
    * for a fixed test user from the backend's /auth/dev endpoint, which only
    * exists when the server runs with ENVIRONMENT=development. Guarded by
@@ -62,6 +67,26 @@ interface UserContextValue {
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
+
+/**
+ * True when the signed-in account already has Big Five scores saved server-side,
+ * i.e. they have completed the survey before on some device.
+ *
+ * Returns false if the request fails, so a network blip re-runs onboarding
+ * rather than stranding a genuinely new user in the tabs with no profile.
+ */
+async function hasServerProfile(): Promise<boolean> {
+  try {
+    // This call gates the splash screen, and fetch has no default timeout, so a
+    // stalled connection would otherwise hang the app on launch indefinitely.
+    const timeout = new Promise<false>(resolve => setTimeout(() => resolve(false), 5000));
+    const lookup = apiFetch<{ big_five?: Record<string, number> | null }>('/profile')
+      .then(({ data }) => Boolean(data?.big_five && Object.keys(data.big_five).length > 0));
+    return await Promise.race([lookup, timeout]);
+  } catch {
+    return false;
+  }
+}
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
@@ -98,9 +123,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setUserId(storedUserId);
         setUserNameState(storedUserName);
         setUserEmailState(storedEmail);
-        setHasCompletedOnboarding(storedOnboarding === 'true');
         if (storedProvider) {
           setAuthProviderState(storedProvider as AuthProvider);
+        }
+
+        // The server is the authority on whether onboarding is done. The local
+        // flag is wiped by any sign-out, so trusting it alone sends a returning
+        // user back through all 60 survey questions and overwrites the scores
+        // already saved against their account.
+        const completedOnServer = await hasServerProfile();
+        setHasCompletedOnboarding(completedOnServer || storedOnboarding === 'true');
+        if (completedOnServer && storedOnboarding !== 'true') {
+          await SecureStore.setItemAsync(ONBOARDING_COMPLETED_KEY, 'true');
         }
       } catch (error) {
         console.error('Failed to load user:', error);
@@ -138,6 +172,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Failed to save auth provider:', error);
     }
+  };
+
+  const restoreOnboardingFromServer = async (): Promise<boolean> => {
+    const completed = await hasServerProfile();
+    if (completed) await completeOnboarding();
+    return completed;
   };
 
   const completeOnboarding = async () => {
@@ -264,6 +304,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       completeTwoFactor,
       authenticateAsDevUser,
       completeOnboarding,
+      restoreOnboardingFromServer,
       clearUser,
     }}>
       {children}

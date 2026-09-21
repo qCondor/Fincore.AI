@@ -115,7 +115,7 @@ export default function LoginScreen() {
   const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setUserName, setAuthProvider, setUserEmail, authenticateWithProvider, completeTwoFactor, authenticateAsDevUser } = useUser();
+  const { setUserName, setAuthProvider, setUserEmail, authenticateWithProvider, completeTwoFactor, authenticateAsDevUser, restoreOnboardingFromServer } = useUser();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
@@ -142,8 +142,14 @@ export default function LoginScreen() {
     if (provider !== 'dev') await setAuthProvider(provider);
     if (name) await setUserName(name);
     if (email) await setUserEmail(email);
+
+    // Someone who has taken the survey before must not be made to sit through
+    // all 60 questions again -- their scores are already saved against the
+    // account, and a rushed re-take would overwrite them.
+    const alreadyOnboarded = await restoreOnboardingFromServer();
+
     setIsLoading(null);
-    router.replace('/info');
+    router.replace(alreadyOnboarded ? '/(tabs)' : '/info');
   };
 
   const handleVerifyTwoFactor = async () => {
