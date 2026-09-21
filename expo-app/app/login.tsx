@@ -192,8 +192,6 @@ export default function LoginScreen() {
     native: GOOGLE_REDIRECT_URI,
   });
 
-  // TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
-  /*
   const [msRequest, msResponse, msPromptAsync] = AuthSession.useAuthRequest(
     {
       clientId: MICROSOFT_CLIENT_ID,
@@ -211,7 +209,6 @@ export default function LoginScreen() {
     },
     googleDiscovery
   );
-  */
 
   const handleAuthSuccess = async (
     provider: 'google' | 'apple' | 'microsoft',
@@ -243,8 +240,6 @@ export default function LoginScreen() {
     await finishSignIn(provider, name, email);
   };
 
-  // TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
-  /*
   const handleGoogleAuth = async () => {
     if (!termsAccepted || !googleRequest) return;
     setIsLoading('google');
@@ -376,8 +371,6 @@ export default function LoginScreen() {
     }
   };
 
-  */
-
   // TEMP: dev-only bypass. Only rendered when __DEV__ is true (never in a
   // release/TestFlight build). Mints a real server-signed session via the
   // backend's ENVIRONMENT=development-gated /auth/dev endpoint.
@@ -477,9 +470,8 @@ export default function LoginScreen() {
 
                 <View style={styles.authCard}>
                   <BlurView intensity={20} tint={t.blurTint} style={styles.authCardBlur}>
-                    {/* TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
-                        Google / Microsoft / Apple sign-in buttons are commented out below.
-                        Remove the __DEV__ "Skip Sign-In" block when re-enabling. */}
+                    {/* Dev-only bypass, compiled out of release builds. The real
+                        provider buttons below are what testers and users see. */}
                     {__DEV__ && (
                       <TouchableOpacity
                         style={[styles.authButton, styles.devSkipButton, (!termsAccepted || isLoading) && styles.authButtonDisabled]}
@@ -498,7 +490,6 @@ export default function LoginScreen() {
                         </Text>
                       </TouchableOpacity>
                     )}
-                    {/* TEMP: disabled for local testing, re-enable before TestFlight — see 2026-09-10
                     <TouchableOpacity
                       style={[styles.authButton, (!termsAccepted || isLoading) && styles.authButtonDisabled]}
                       onPress={handleGoogleAuth}
@@ -566,7 +557,6 @@ export default function LoginScreen() {
                         </Text>
                       </TouchableOpacity>
                     )}
-                    */}
 
                     <View style={styles.termsRow}>
                       <TouchableOpacity
