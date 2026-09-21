@@ -152,6 +152,17 @@ until someone does.
 
 ---
 
+## Before you give a build to a tester
+
+A TestFlight build does **not** talk to your laptop. It talks to the live server at
+`35.178.139.5`. That server is currently running older code than this project, which means a
+tester would lose the details they typed in as soon as they finished the quiz.
+
+The server has to be updated first. See `GO_LIVE.md` section 0 — it is the first thing in that
+document for a reason.
+
+---
+
 ## Things that will surprise you
 
 - **The simulator cannot do everything.** No real camera, no Face ID, no torch/flash, no push

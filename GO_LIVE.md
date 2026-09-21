@@ -1,9 +1,51 @@
 # Before We Go Live
 
 Blocking items between the current state and real users on TestFlight / the App Store.
-Written against the codebase as of commit `23a68fd`. Tick items off as they land.
+Tick items off as they land.
 
 Ordered by what blocks what. The AWS items have multi-day review times, so start them first.
+
+---
+
+## 0. Before the next tester build — deploy the backend
+
+**The production server is running older code than this repository.** Verified by probing it:
+`POST /auth/2fa/challenge` returns 404 while `/waitlist` returns 422, so that box predates the
+auth and profile work.
+
+This matters more than anything else in this document, because a TestFlight build points at
+`http://35.178.139.5:8000` (set in `eas.json`, `production` profile) — not at anyone's laptop.
+Ship a build against the current server and a tester will hit this:
+
+1. They sign in, and enter name, date of birth, email and phone on the About You screen.
+2. They answer the 60 survey questions.
+3. The old `/score` endpoint **replaces the whole profile** instead of merging, so their phone,
+   date of birth and email are wiped.
+4. They open Personal Details and find their details gone.
+
+The fix is already in the repo. It is simply not on the server.
+
+Also missing from production until it is redeployed: profile merge on `POST /profile`, the `typ`
+claim that separates session tokens from 2FA challenge tokens, and the SMS/2FA endpoints. The
+app tolerates their absence (2FA is flag-gated off, and a response without `requires_2fa` is
+treated as a normal sign-in), so the data loss above is the visible symptom.
+
+- [ ] Deploy the current `my-agent/` to the production host
+- [ ] Re-run the probe and confirm `POST /auth/2fa/challenge` no longer returns 404
+- [ ] Confirm `POST /auth/dev` still returns **404** in production (it must stay disabled —
+      it mints a session with no credentials)
+- [ ] Only then cut the TestFlight build
+
+### There is no deployment process, and that is its own problem
+
+There is no deploy script, no CI workflow, no container definition, and nothing in the repo
+documenting how code reaches `35.178.139.5`. Whoever set that server up did it by hand, and the
+method lives only in their head. That is a bus-factor risk independent of this release.
+
+- [ ] Write down how the server is deployed and run (systemd unit? tmux? screen? bare
+      `uvicorn`?), and commit it alongside this file
+- [ ] Record where its `.env` lives and how it is updated
+- [ ] Add a one-command deploy script so this cannot drift again
 
 ---
 
