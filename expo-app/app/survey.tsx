@@ -6,8 +6,9 @@ import {
   TouchableOpacity,
   Animated,
   Dimensions,
+  ScrollView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { WaveBackground } from '../components/WaveBackground';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
@@ -109,70 +110,105 @@ const LIKERT_OPTIONS = [
   { label: 'Strongly Agree',    value: 5 },
 ];
 
+const QUESTIONS_PER_PAGE = 4;
+const TOTAL_PAGES = Math.ceil(questions.length / QUESTIONS_PER_PAGE);
+
+// Each BFI-2 facet has exactly 4 items, so a page is always one facet. Keyed by
+// facet rather than page index so the heading cannot drift from the statements
+// shown if the question order is ever changed.
+const FACET_LABELS: Record<string, string> = {
+  sociability: 'Sociability',
+  assertiveness: 'Assertiveness',
+  energyLevel: 'Energy Level',
+  compassion: 'Compassion',
+  respectfulness: 'Respectfulness',
+  trust: 'Trust',
+  organization: 'Organization',
+  productiveness: 'Productiveness',
+  responsibility: 'Responsibility',
+  anxiety: 'Anxiety',
+  depression: 'Depression',
+  emotionalVolatility: 'Emotional Volatility',
+  intellectualCuriosity: 'Intellectual Curiosity',
+  aestheticSensitivity: 'Aesthetic Sensitivity',
+  creativeImagination: 'Creative Imagination',
+};
+
 export default function SurveyScreen() {
   const t = useTheme();
   const styles = useMemo(() => makeStyles(t), [t]);
   const router = useRouter();
   const params = useLocalSearchParams<{ userName?: string }>();
   const insets = useSafeAreaInsets();
-  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const slideAnim = useRef(new Animated.Value(0)).current;
-  // True while the slide-out/slide-in transition is running. A second tap in
-  // that window used to queue a second `q => q + 1`, skipping a question and,
-  // on the penultimate question, indexing past the end of `questions`.
+  const scrollRef = useRef<ScrollView>(null);
+  // True while the slide-out/slide-in transition is running, so a double tap
+  // on Continue cannot advance two pages or index past the last one.
   const isAdvancing = useRef(false);
 
-  const lastIndex = questions.length - 1;
-  // Defensive clamp: `questions` is static so this only matters if state is
-  // ever pushed out of range, but it guarantees `question` is always defined.
-  const question = questions[Math.min(currentQuestion, lastIndex)];
-  const progress = currentQuestion / questions.length;
+  const lastPage = TOTAL_PAGES - 1;
+  const pageIndex = Math.min(currentPage, lastPage);
+  const pageStart = pageIndex * QUESTIONS_PER_PAGE;
+  const pageQuestions = questions.slice(pageStart, pageStart + QUESTIONS_PER_PAGE);
+  const pageTitle = FACET_LABELS[pageQuestions[0]?.facet] ?? '';
+  const answeredCount = Object.keys(answers).length;
+  const progress = answeredCount / questions.length;
+  const isPageComplete = pageQuestions.every((_, i) => answers[pageStart + i] !== undefined);
 
-  const handleAnswer = (value: number) => {
-    if (isAdvancing.current) return;
+  const handleAnswer = (questionIndex: number, value: number) => {
+    setAnswers(prev => ({ ...prev, [questionIndex]: value }));
+  };
 
-    const newAnswers = { ...answers, [currentQuestion]: value };
-    setAnswers(newAnswers);
+  const submit = () => {
+    const payload = questions.map((q, idx) => ({
+      itemId: q.itemId,
+      facet: q.facet,
+      domain: q.domain,
+      reverse: q.reverse,
+      rating: answers[idx] ?? 3,
+    }));
+    router.push({
+      pathname: '/processing',
+      params: { answers: JSON.stringify(payload), userName: params.userName },
+    });
+  };
 
-    if (currentQuestion < lastIndex) {
-      isAdvancing.current = true;
+  const handleContinue = () => {
+    if (isAdvancing.current || !isPageComplete) return;
+
+    if (currentPage >= lastPage) {
+      submit();
+      return;
+    }
+
+    isAdvancing.current = true;
+    Animated.timing(slideAnim, {
+      toValue: -SCREEN_WIDTH,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      slideAnim.setValue(SCREEN_WIDTH);
+      setCurrentPage(p => Math.min(p + 1, lastPage));
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
       Animated.timing(slideAnim, {
-        toValue: -SCREEN_WIDTH,
+        toValue: 0,
         duration: 200,
         useNativeDriver: true,
       }).start(() => {
-        slideAnim.setValue(SCREEN_WIDTH);
-        setCurrentQuestion(q => Math.min(q + 1, lastIndex));
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }).start(() => {
-          isAdvancing.current = false;
-        });
+        isAdvancing.current = false;
       });
-    } else {
-      const payload = questions.map((q, idx) => ({
-        itemId: q.itemId,
-        facet: q.facet,
-        domain: q.domain,
-        reverse: q.reverse,
-        rating: newAnswers[idx] ?? 3,
-      }));
-      router.push({
-        pathname: '/processing',
-        params: { answers: JSON.stringify(payload), userName: params.userName },
-      });
-    }
+    });
   };
 
   const handleBack = () => {
     slideAnim.stopAnimation();
     slideAnim.setValue(0);
     isAdvancing.current = false;
-    if (currentQuestion > 0) {
-      setCurrentQuestion(currentQuestion - 1);
+    if (currentPage > 0) {
+      setCurrentPage(currentPage - 1);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
     } else {
       router.back();
     }
@@ -180,11 +216,7 @@ export default function SurveyScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={t.gradients.main}
-        locations={[0, 0.5, 1]}
-        style={StyleSheet.absoluteFill}
-      />
+      <WaveBackground prefix="survey" />
 
       {/* Single continuous progress bar */}
       <View style={[styles.progressContainer, { top: insets.top + 54 }]}>
@@ -209,26 +241,64 @@ export default function SurveyScreen() {
         </TouchableOpacity>
 
         <Animated.View style={[styles.questionContainer, { transform: [{ translateX: slideAnim }] }]}>
-          <Text style={styles.questionNumber}>{currentQuestion + 1} of {questions.length}</Text>
-          <Text style={styles.questionText}>{question.text}</Text>
-          <Text style={styles.questionHint}>Rate how accurately this describes you.</Text>
+          <ScrollView
+            ref={scrollRef}
+            style={styles.scroll}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
+            <Text style={styles.questionNumber}>
+              {pageIndex + 1}/{TOTAL_PAGES} sections
+            </Text>
+            <Text style={styles.sectionTitle}>{pageTitle}</Text>
+            <Text style={styles.questionHint}>Rate how accurately each statement describes you.</Text>
 
-          {/* Likert scale options */}
-          <View style={styles.optionsContainer}>
-            {LIKERT_OPTIONS.map((option) => {
-              const isSelected = answers[currentQuestion] === option.value;
+            <View style={styles.scaleLegend}>
+              <Text style={styles.scaleLegendText}>Strongly disagree</Text>
+              <Text style={styles.scaleLegendText}>Strongly agree</Text>
+            </View>
+
+            {pageQuestions.map((q, i) => {
+              const questionIndex = pageStart + i;
+              const selected = answers[questionIndex];
               return (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[styles.optionButton, isSelected && styles.optionButtonSelected]}
-                  onPress={() => handleAnswer(option.value)}
-                >
-                  <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
+                <View key={q.itemId} style={styles.questionBlock}>
+                  <Text style={styles.questionText}>{q.text}</Text>
+                  <View style={styles.scaleRow}>
+                    {LIKERT_OPTIONS.map((option) => {
+                      const isSelected = selected === option.value;
+                      return (
+                        <TouchableOpacity
+                          key={option.value}
+                          style={[styles.scaleDot, isSelected && styles.scaleDotSelected]}
+                          onPress={() => handleAnswer(questionIndex, option.value)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: isSelected }}
+                          accessibilityLabel={`${q.text} — ${option.label}`}
+                        >
+                          <Text style={[styles.scaleDotText, isSelected && styles.scaleDotTextSelected]}>
+                            {option.value}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
               );
             })}
+          </ScrollView>
+
+          <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+            <TouchableOpacity
+              style={[styles.continueButton, !isPageComplete && styles.continueButtonDisabled]}
+              onPress={handleContinue}
+              disabled={!isPageComplete}
+              activeOpacity={0.9}
+            >
+              <Text style={[styles.continueButtonText, !isPageComplete && styles.continueButtonTextDisabled]}>
+                {currentPage >= lastPage ? 'Finish' : 'Continue'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </Animated.View>
       </View>
@@ -239,6 +309,7 @@ export default function SurveyScreen() {
 const makeStyles = (t: Theme) => StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: t.background,
   },
   progressContainer: {
     position: 'absolute',
@@ -278,41 +349,90 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     color: t.textFaint,
     marginBottom: 12,
   },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingTop: 4,
+    paddingBottom: 16,
+  },
   questionText: {
-    fontSize: t.type.headline,
+    fontSize: t.type.bodyLarge,
+    fontWeight: '600',
+    color: t.textPrimary,
+    lineHeight: t.line.body,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: t.type.title,
     fontWeight: '700',
     color: t.textPrimary,
-    lineHeight: t.line.display,
-    letterSpacing: -0.5,
-    marginBottom: 8,
+    letterSpacing: -0.4,
+    marginBottom: 4,
   },
   questionHint: {
-    fontSize: t.type.body,
+    fontSize: t.type.bodySmall,
     color: t.textFaint,
+    marginBottom: 20,
+  },
+  scaleLegend: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  scaleLegendText: {
+    fontSize: t.type.captionSmall,
+    color: t.textFaint,
+  },
+  questionBlock: {
     marginBottom: 24,
   },
-  optionsContainer: {
-    gap: 10,
+  scaleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  optionButton: {
+  scaleDot: {
+    flex: 1,
+    marginHorizontal: 4,
+    height: 48,
+    borderRadius: 14,
     backgroundColor: t.textNear,
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  optionButtonSelected: {
+  scaleDotSelected: {
     backgroundColor: t.textPrimary,
     borderColor: t.secondary,
   },
-  optionText: {
+  scaleDotText: {
     fontSize: t.type.body,
-    color: t.textOnSurface,
-    lineHeight: t.line.body,
-  },
-  optionTextSelected: {
     fontWeight: '600',
+    color: t.textOnSurface,
+  },
+  scaleDotTextSelected: {
     color: t.secondary,
+  },
+  footer: {
+    paddingTop: 8,
+  },
+  continueButton: {
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: t.textPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueButtonDisabled: {
+    backgroundColor: t.overlayMedium,
+  },
+  continueButtonText: {
+    fontSize: t.type.bodyLarge,
+    fontWeight: '600',
+    color: t.textOnSurface,
+  },
+  continueButtonTextDisabled: {
+    color: t.textFaint,
   },
 });
