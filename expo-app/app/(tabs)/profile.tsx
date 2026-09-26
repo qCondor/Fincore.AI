@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Line, Defs, LinearGradient as SvgLinearGradient, Stop, Circle } from 'react-native-svg';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ComingSoonModal } from '../../components/ComingSoonModal';
 import { useProfile } from '../../hooks/useProfile';
 import { useUser } from '../../contexts/UserContext';
@@ -99,7 +99,6 @@ export default function ProfileScreen() {
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<'personal' | 'security' | 'notifications' | 'preferences' | 'help' | null>(null);
   const settingsSlide = React.useRef(new Animated.Value(SCREEN_WIDTH)).current;
-  const hasOpenedSettings = React.useRef(false);
 
   const openSettingsMenu = () => {
     setSettingsMenuOpen(true);
@@ -110,19 +109,28 @@ export default function ProfileScreen() {
     }).start();
   };
 
-  // Auto-open settings menu if navigated with openSettings param
-  useEffect(() => {
-    if (params.openSettings === 'true' && !hasOpenedSettings.current) {
-      hasOpenedSettings.current = true;
-      // Small delay to ensure animation works after navigation
-      setTimeout(() => {
-        openSettingsMenu();
-      }, 100);
-    }
-  }, [params.openSettings]);
+  // Open settings when another screen's avatar button sent us here.
+  //
+  // This runs on focus rather than in a useEffect keyed on the param: tab
+  // screens stay mounted, so arriving with openSettings='true' when it was
+  // already 'true' from a previous visit changes no dependency and the effect
+  // never re-runs. That is what made the button need two taps -- the first
+  // landed on the psych profile and did nothing.
+  //
+  // The param is consumed immediately so simply returning to this tab later
+  // does not spring the menu open again.
+  useFocusEffect(
+    useCallback(() => {
+      if (params.openSettings !== 'true') return;
+      // Opened synchronously rather than on a timer: clearing the param below
+      // re-runs this effect, and the cleanup would cancel a pending timeout
+      // before it ever fired.
+      openSettingsMenu();
+      router.setParams({ openSettings: undefined });
+    }, [params.openSettings])
+  );
 
   const closeSettingsMenu = () => {
-    hasOpenedSettings.current = false;
     Animated.timing(settingsSlide, {
       toValue: SCREEN_WIDTH,
       duration: 350,
