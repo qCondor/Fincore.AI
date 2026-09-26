@@ -40,33 +40,11 @@ import {
 import { WaveBackground } from '../../components/WaveBackground';
 import { BottomInputBar } from '../../components/BottomInputBar';
 import { AnimatedScreen } from '../../components/AnimatedScreen';
-import { traitMetadata } from '../../lib/traits';
+import { buildOceanTraits } from '../../lib/traits';
 import { useTheme, type Theme } from '../../contexts/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-function buildOceanTraits(bigFive: Record<string, number> | null) {
-  const defaultScores: Record<string, number> = { openness: 50, conscientiousness: 50, extraversion: 50, agreeableness: 50, neuroticism: 50 };
-  const scores: Record<string, number> = bigFive || defaultScores;
-
-  return Object.entries(traitMetadata).map(([key, meta]) => {
-    const score = scores[key] ?? scores[key.charAt(0).toUpperCase() + key.slice(1)] ?? 50;
-    const isHigh = score >= 50;
-
-    return {
-      trait: key.charAt(0).toUpperCase() + key.slice(1),
-      letter: meta.letter,
-      score,
-      definition: meta.definition,
-      subtraits: meta.subtraits.map(s => ({
-        name: s.name,
-        insight: isHigh ? s.highInsight : s.lowInsight,
-      })),
-      profile: isHigh ? meta.highProfile : meta.lowProfile,
-      faith: isHigh ? meta.highFaith : meta.lowFaith,
-    };
-  });
-}
 
 function ChevronDownIcon({ rotated }: { rotated: boolean }) {
   const t = useTheme();

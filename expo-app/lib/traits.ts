@@ -79,3 +79,47 @@ export const traitMetadata: Record<string, {
     tip: 'Set one calm review day per month instead of checking impulsively.',
   },
 };
+
+export interface OceanTrait {
+  trait: string;
+  letter: string;
+  score: number;
+  definition: string;
+  subtraits: { name: string; insight: string }[];
+  profile: string;
+  faith: string;
+}
+
+/**
+ * Turns raw Big Five scores into the display model used by the trait cards.
+ *
+ * Shared deliberately: the results screen and the profile screen each used to
+ * build this themselves, and drifted -- results showed only the profile blurb
+ * plus a tip, while profile showed the definition, subtrait breakdown and the
+ * Faith line. One implementation means they cannot disagree again.
+ *
+ * Accepts scores keyed either lower-case ('openness') or capitalised
+ * ('Openness'), since /score and the local route params differ.
+ */
+export function buildOceanTraits(bigFive: Record<string, number> | null): OceanTrait[] {
+  const scores: Record<string, number> = bigFive || {};
+
+  return Object.entries(traitMetadata).map(([key, meta]) => {
+    const capitalised = key.charAt(0).toUpperCase() + key.slice(1);
+    const score = scores[key] ?? scores[capitalised] ?? 50;
+    const isHigh = score >= 50;
+
+    return {
+      trait: capitalised,
+      letter: meta.letter,
+      score,
+      definition: meta.definition,
+      subtraits: meta.subtraits.map(s => ({
+        name: s.name,
+        insight: isHigh ? s.highInsight : s.lowInsight,
+      })),
+      profile: isHigh ? meta.highProfile : meta.lowProfile,
+      faith: isHigh ? meta.highFaith : meta.lowFaith,
+    };
+  });
+}

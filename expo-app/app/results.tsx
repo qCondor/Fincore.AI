@@ -10,7 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUser } from '../contexts/UserContext';
-import { traitMetadata } from '../lib/traits';
+import { buildOceanTraits } from '../lib/traits';
 import { useTheme, type Theme } from '../contexts/ThemeContext';
 
 // Default/fallback scores
@@ -51,6 +51,8 @@ export default function ResultsScreen() {
     return defaultScores;
   }, [params.scores]);
 
+  const traits = useMemo(() => buildOceanTraits(scores), [scores]);
+
   const handleContinue = async () => {
     await completeOnboarding();
     router.replace('/(tabs)/faith');
@@ -77,24 +79,33 @@ export default function ResultsScreen() {
           Here's how your psychology shapes your money decisions
         </Text>
 
-        {/* Trait cards */}
+        {/* Trait cards -- same content as the profile screen, built from the
+            same shared helper so the two cannot drift apart again. */}
         <View style={styles.traitsContainer}>
-          {Object.entries(scores).map(([trait, score]) => {
-            const isExpanded = expandedTrait === trait;
-            const colors = t.traitGradients[trait];
-            const meta = traitMetadata[trait.toLowerCase()];
-            const isHigh = score >= 50;
+          {traits.map((trait) => {
+            const isExpanded = expandedTrait === trait.trait;
+            const colors = t.traitGradients[trait.trait];
 
             return (
               <TouchableOpacity
-                key={trait}
+                key={trait.trait}
                 style={styles.traitCard}
-                onPress={() => setExpandedTrait(isExpanded ? null : trait)}
+                onPress={() => setExpandedTrait(isExpanded ? null : trait.trait)}
                 activeOpacity={0.8}
               >
                 <View style={styles.traitHeader}>
-                  <Text style={styles.traitName}>{trait}</Text>
-                  <Text style={styles.traitScore}>{score}%</Text>
+                  <View style={styles.traitLabelRow}>
+                    <LinearGradient
+                      colors={[colors.from, colors.to]}
+                      style={styles.traitBadge}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      <Text style={styles.traitLetter}>{trait.letter}</Text>
+                    </LinearGradient>
+                    <Text style={styles.traitName}>{trait.trait}</Text>
+                  </View>
+                  <Text style={styles.traitScore}>{trait.score}th</Text>
                 </View>
 
                 {/* Score bar */}
@@ -103,19 +114,34 @@ export default function ResultsScreen() {
                     colors={[colors.from, colors.to]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
-                    style={[styles.scoreFill, { width: `${score}%` }]}
+                    style={[styles.scoreFill, { width: `${trait.score}%` }]}
                   />
                 </View>
 
-                {/* Expanded description */}
-                {isExpanded && meta && (
-                  <View style={styles.traitExpanded}>
-                    <Text style={styles.traitDescription}>
-                      {isHigh ? meta.highProfile : meta.lowProfile}
-                    </Text>
-                    <View style={styles.tipContainer}>
-                      <Text style={styles.tipLabel}>💡 Tip</Text>
-                      <Text style={styles.tipText}>{meta.tip}</Text>
+                {isExpanded && (
+                  <View style={styles.expandedContent}>
+                    <View style={styles.expandedSection}>
+                      <Text style={styles.expandedSectionTitle}>{trait.trait} — {trait.score}/100</Text>
+                      <Text style={styles.expandedText}>{trait.definition}</Text>
+                    </View>
+                    <View style={styles.expandedSection}>
+                      {trait.subtraits.map((s) => (
+                        <View key={s.name} style={styles.subtraitRow}>
+                          <View style={[styles.subtraitDot, { backgroundColor: colors.from }]} />
+                          <Text style={styles.expandedText}>
+                            <Text style={styles.boldText}>{s.name}</Text> — {s.insight}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                    <View style={styles.expandedSection}>
+                      <Text style={styles.expandedSectionTitle}>Your Profile</Text>
+                      <Text style={styles.expandedText}>{trait.profile}</Text>
+                    </View>
+                    <View style={styles.expandedFaith}>
+                      <Text style={styles.faithHelpText}>
+                        <Text style={styles.boldText}>How Faith Can Help</Text> — {trait.faith}
+                      </Text>
                     </View>
                   </View>
                 )}
@@ -138,6 +164,68 @@ export default function ResultsScreen() {
 }
 
 const makeStyles = (t: Theme) => StyleSheet.create({
+  traitLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  traitBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  traitLetter: {
+    fontSize: t.type.bodySmall,
+    fontWeight: '700',
+    color: t.textPrimary,
+  },
+  expandedContent: {
+    marginTop: 12,
+    backgroundColor: t.surfaceNeutralAlt,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  expandedSection: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: t.textMuted,
+  },
+  expandedSectionTitle: {
+    fontSize: t.type.caption,
+    fontWeight: '600',
+    color: t.textOnSurface,
+    marginBottom: 4,
+  },
+  expandedText: {
+    fontSize: t.type.caption,
+    color: t.textOnSurfaceSecondary,
+    lineHeight: t.line.compact,
+  },
+  subtraitRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 8,
+  },
+  subtraitDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 6,
+  },
+  boldText: {
+    fontWeight: '700',
+  },
+  expandedFaith: {
+    padding: 12,
+    backgroundColor: t.primaryTintFaint,
+  },
+  faithHelpText: {
+    fontSize: t.type.caption,
+    color: t.primaryOnSurface,
+  },
   container: {
     flex: 1,
   },
@@ -192,34 +280,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   scoreFill: {
     height: '100%',
     borderRadius: 4,
-  },
-  traitExpanded: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: t.shadowSoft,
-  },
-  traitDescription: {
-    fontSize: t.type.bodyCompact,
-    color: t.textOnLightBody,
-    lineHeight: t.line.body,
-    marginBottom: 12,
-  },
-  tipContainer: {
-    backgroundColor: t.secondaryTint,
-    borderRadius: 12,
-    padding: 12,
-  },
-  tipLabel: {
-    fontSize: t.type.caption,
-    fontWeight: '600',
-    color: t.secondary,
-    marginBottom: 4,
-  },
-  tipText: {
-    fontSize: t.type.bodySmall,
-    color: t.textOnLightBody,
-    lineHeight: t.line.compact,
   },
   expandHint: {
     fontSize: t.type.captionSmall,
