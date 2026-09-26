@@ -6,6 +6,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { SettingsPage } from './SettingsPage';
 import { SettingsSection } from './SettingsSection';
+import { PickerRow } from './PickerRow';
+import { OCCUPATIONS, NATIONALITIES, validateAddress } from '../../lib/referenceData';
 import { apiPost, apiPatch } from '../../lib/api';
 import { useTheme, type Theme } from '../../contexts/ThemeContext';
 
@@ -148,6 +150,7 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
   const [address, setAddress] = useState('');
   const [occupation, setOccupation] = useState('');
   const [nationality, setNationality] = useState('');
+  const [addressError, setAddressError] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -212,6 +215,12 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
 
   const handleSave = async () => {
     if (!userId || !hasChanges) return;
+
+    // Checked here rather than on every keystroke so the message appears once
+    // the user is done typing, not while they are halfway through a postcode.
+    const addressProblem = validateAddress(address);
+    setAddressError(addressProblem);
+    if (addressProblem) return;
 
     setIsSaving(true);
     setSaveStatus('idle');
@@ -299,22 +308,29 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
           icon={<MapPinIcon />}
           label="Address"
           value={address}
-          onChangeText={handleFieldChange(setAddress)}
-          placeholder="Add your address"
+          onChangeText={(text) => {
+            handleFieldChange(setAddress)(text);
+            if (addressError) setAddressError(null);
+          }}
+          placeholder="Add your address, including postcode"
         />
-        <EditableRow
+        {addressError && <Text style={styles.fieldError}>{addressError}</Text>}
+        <PickerRow
           icon={<BriefcaseIcon />}
           label="Occupation"
           value={occupation}
-          onChangeText={handleFieldChange(setOccupation)}
-          placeholder="Add your occupation"
+          options={OCCUPATIONS}
+          onSelect={handleFieldChange(setOccupation)}
+          placeholder="Select your occupation"
         />
-        <EditableRow
+        <PickerRow
           icon={<FlagIcon />}
           label="Nationality"
           value={nationality}
-          onChangeText={handleFieldChange(setNationality)}
-          placeholder="Add your nationality"
+          options={NATIONALITIES}
+          onSelect={handleFieldChange(setNationality)}
+          placeholder="Select your nationality"
+          searchable
           isLast
         />
       </SettingsSection>
@@ -343,6 +359,13 @@ export function PersonalDetails({ onBack, initials, userId, profile, onProfileUp
 }
 
 const makeStyles = (t: Theme) => StyleSheet.create({
+  fieldError: {
+    fontSize: t.type.caption,
+    color: t.danger,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    marginTop: -4,
+  },
   avatarSection: {
     alignItems: 'center',
     marginBottom: 24,
