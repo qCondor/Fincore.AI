@@ -74,7 +74,6 @@ const makeStyles = (t: Theme) => StyleSheet.create({
     fontWeight: '700',
     color: t.textPrimary,
     textAlign: 'center',
-    marginRight: 42,
   },
   placeholder: {
     width: 42,
