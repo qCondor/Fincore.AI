@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -165,8 +165,24 @@ export default function FaithScreen() {
 
   // Use dynamic suggestions if available, otherwise defaults
   const quickReplies = dynamicSuggestions.length > 0 ? dynamicSuggestions : [];
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   const [comingSoonModal, setComingSoonModal] = useState<{ open: boolean; feature: 'banking' | 'analytics' | 'blueprint' | 'voice' | null }>({ open: false, feature: null });
+
+  // The composer sits over the empty state, so the suggestion chips and the
+  // input bar collide once the keyboard pushes the composer up. Hide them
+  // while typing -- someone with the keyboard open has already decided what
+  // to ask. 'Will' events on iOS so the chips go before the keyboard animates.
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const handledParamsRef = useRef<string | null>(null);
@@ -359,14 +375,18 @@ export default function FaithScreen() {
             </View>
             <Text style={styles.emptyTitle}>Hi, I'm Faith</Text>
             <Text style={styles.emptySubtitle}>Your personality-aware financial coach</Text>
-            <Text style={styles.suggestionLabel}>TRY ASKING</Text>
-            <View style={styles.suggestionList}>
-              {defaultSuggestions.map((s) => (
-                <TouchableOpacity key={s} style={styles.suggestionChip} onPress={() => handleSuggestion(s)}>
-                  <Text style={styles.suggestionText}>{s}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {!keyboardVisible && (
+              <>
+                <Text style={styles.suggestionLabel}>TRY ASKING</Text>
+                <View style={styles.suggestionList}>
+                  {defaultSuggestions.map((s) => (
+                    <TouchableOpacity key={s} style={styles.suggestionChip} onPress={() => handleSuggestion(s)}>
+                      <Text style={styles.suggestionText}>{s}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
         ) : (
           <ScrollView
