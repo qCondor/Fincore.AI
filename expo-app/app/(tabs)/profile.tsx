@@ -258,7 +258,7 @@ export default function ProfileScreen() {
                         </LinearGradient>
                         <Text style={styles.traitName}>{trait.trait}</Text>
                       </View>
-                      <Text style={styles.traitScore}>{trait.score}th</Text>
+                      <Text style={styles.traitScore}>{trait.score}</Text>
                     </View>
 
                     <View style={styles.traitBarBg}>

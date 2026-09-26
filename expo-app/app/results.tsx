@@ -105,7 +105,7 @@ export default function ResultsScreen() {
                     </LinearGradient>
                     <Text style={styles.traitName}>{trait.trait}</Text>
                   </View>
-                  <Text style={styles.traitScore}>{trait.score}th</Text>
+                  <Text style={styles.traitScore}>{trait.score}</Text>
                 </View>
 
                 {/* Score bar */}
