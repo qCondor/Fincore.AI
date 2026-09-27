@@ -1,140 +1,124 @@
 # Fincore — Handover Guide
 
-Plain-English guide to getting the app running and understanding what you have been given.
+Plain-English guide to getting a new version of the app onto people's iPhones.
 No prior knowledge of this project assumed.
+
+Written for the **HP OmniBook laptop running Windows 11**. Everything below was tested on that
+laptop on 27 September 2026 and produced build 10 on TestFlight.
 
 ---
 
-## First, an important correction: Expo Go will not work
+## The plan in one paragraph
 
-If you were told to open this in **Expo Go**, that will not work, and it is worth knowing why
-before you waste an afternoon on it.
+You change the code on this laptop. You then run **one command**, which sends the code to
+Expo's computers in the cloud. They build the iPhone app for you (because an iPhone app can
+only be built on a Mac, and this laptop is not a Mac), and hand it straight to Apple. About
+twenty minutes later it appears in **TestFlight**, Apple's app for testing, and anyone you have
+invited can install it on their iPhone.
 
-Expo Go is a pre-built app from the App Store. It can run projects that only use the features
-Apple and Expo baked into it. This app uses ten things Expo Go does not contain — the camera,
-audio, Face ID, push notifications, Sign in with Apple, secure storage, the photo picker, and
-more. When Expo Go hits one of those it simply crashes with something like
-`Cannot find native module 'ExpoAudio'`.
-
-There is no setting or workaround. The project needs its **own** app built, containing those
-features. That is called a **development build**, and it is what the instructions below produce.
-In day-to-day use it behaves exactly like Expo Go — you scan a QR code, it loads, changes appear
-live — it is just an app with this project's name on it instead of Expo's.
-
-**If you only want to click around the app and do not intend to change code, skip to
-[Option B: TestFlight](#option-b-just-use-the-app-testflight).** It is far less work.
+You never need a Mac, Xcode, or an iPhone simulator for this.
 
 ---
 
 ## What this app actually is
 
-Fincore has two halves that must both be running:
+Fincore has two halves:
 
 1. **The phone app** (`expo-app/`) — what you see and tap. Written in React Native.
 2. **The server** (`my-agent/`) — the brain. Scores the personality quiz, talks to the AI coach,
-   stores profiles. Written in Python. Runs on your laptop during development.
+   stores profiles. Written in Python.
 
-The phone app is useless on its own. If the server is not running, you will sign in and then
-see empty screens and spinners, because the app is asking a server that is not there.
+The TestFlight app talks to the **live server** on the internet at `35.178.139.5`. It does
+**not** talk to this laptop. So you do not need to run the server here to use or test the app.
 
 There is also `landing/`, a single static marketing web page, unrelated to the app.
 
-**What the app does:** a new user signs in, gives their name and a few details, answers 60
-personality questions, and gets a Big Five ("OCEAN") personality profile. From then on an AI
-coach called Faith gives money advice shaped by that profile, and a camera feature scans
-products and tells you what they "really" cost you emotionally.
+**What the app does:** a new user signs in with Google, Apple or Microsoft, gives their name and
+a few details, answers 60 personality questions, and gets a Big Five ("OCEAN") personality
+profile. From then on an AI coach called Faith gives money advice shaped by that profile, and a
+camera feature scans products and tells you what they "really" cost you emotionally.
 
 ---
 
-## Option A: Run it yourself (for making changes)
+## One-time setup (already done on this laptop)
 
-### What you need installed
+This is here in case you move to a new laptop. On the HP, all of it is already done.
 
-- **A Mac.** The iPhone simulator only exists on macOS.
-- **Xcode**, from the Mac App Store. Large, slow download — start it first.
-- **Node.js** (v20 or newer) — https://nodejs.org
-- **Python 3.12**
-- The project's AWS keys and other secrets, which are **not** in the code. Ask whoever handed
-  this over for the `my-agent/.env` file. Nothing works without it.
+1. **Node.js** — https://nodejs.org. This laptop has v24.
+2. **Git** — https://git-scm.com. Needed to fetch the code.
+3. **The EAS tool** — Expo's command for building in the cloud. Open PowerShell and run:
+   ```powershell
+   npm install -g eas-cli
+   ```
+4. **Log in to Expo** with the project's Expo account (`qutyco`):
+   ```powershell
+   eas login
+   ```
+   Check it worked with `eas whoami` — it should print `qutyco`.
 
-### Step 1 — Start the server
+That is all. The Apple certificates and the key that lets Expo upload to Apple are **stored on
+Expo's side**, not on this laptop. You do not need an Apple password to build.
 
-Open Terminal and run these one at a time:
+---
 
-```bash
-cd ~/Fincore.AI/my-agent
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+## Putting a new version on TestFlight
 
-Put the `.env` file you were given into the `my-agent` folder. If you only have
-`.env.example`, copy it to `.env` and fill in the real values — the example has the right
-shape but fake values.
+Open **PowerShell** (or the terminal inside VS Code) and do these steps in order.
 
-Then start it:
+### Step 1 — Go to the app folder and get the latest code
 
-```bash
-uvicorn server:app --reload --host 0.0.0.0 --port 8000
-```
-
-Leave this window open. It should say `Application startup complete`. You will also see
-`ENVIRONMENT=development: /auth/dev session bypass is ENABLED` — that is expected in
-development and is what lets you skip the sign-in screen.
-
-**Leave this running.** Everything below assumes it is up.
-
-### Step 2 — Build and run the app
-
-Open a **second** Terminal window:
-
-```bash
-cd ~/Fincore.AI/expo-app
+```powershell
+cd C:\Users\Harris\OneDrive\Documents\Fincore.AI
+git pull
+cd expo-app
 npm install
-npx expo run:ios
 ```
 
-The first run takes 10–20 minutes — it is compiling the whole app. Later runs take seconds.
-The iPhone simulator will open on its own when it is done.
+`git pull` fetches anything other people have changed. **Always do this first** — on
+27 September this laptop was 11 changes behind, including the one that switches sign-in back on.
+A build made from old code would have left testers unable to sign in at all.
 
-If it complains about **code signing**, open Xcode → Settings → Accounts, sign in with any
-Apple ID (free, no paid developer account needed), then run the command again.
+### Step 2 — Check nothing is broken
 
-### Step 3 — Everyday use after that first build
-
-You only need the long build again if someone adds a new device feature. Normally:
-
-```bash
-cd ~/Fincore.AI/expo-app
-npx expo start
+```powershell
+npx tsc --noEmit
 ```
 
-Then press `i` to open the simulator. Edit a file, save, and the app updates instantly.
-Press `r` in that terminal to force a reload if something looks stuck.
+If it prints nothing, you are fine. If it prints errors, fix them before going on — a broken
+build still uses up one of your monthly builds.
 
-### Step 4 — Getting into the app
+### Step 3 — Build and send to Apple
 
-On the sign-in screen, tap **"Skip Sign-In (dev only)"**. That is a development shortcut that
-logs you in as a test user without a password. It only exists while the server is running in
-development mode, and it is disabled in real released builds.
+```powershell
+eas build --platform ios --profile production --auto-submit
+```
 
-Sign in with Google, Apple and Microsoft are currently **switched off in the code** during
-development. Skip Sign-In is the only way in right now.
+This one command does everything:
 
----
+- Uploads the code to Expo (a few seconds).
+- Expo builds the iPhone app on their Macs (about 10 minutes).
+- Sends the finished app to Apple.
 
-## Option B: Just use the app (TestFlight)
+You will see a link starting `https://expo.dev/...builds/...` near the top. Open it to watch
+progress in your browser. You can close the terminal once you see that link — the build carries
+on in the cloud.
 
-If you only want to *use* the app, not change it, this is the right path. Nothing to install
-beyond one free Apple app, and no server to run — a TestFlight build points at the real server.
+You do **not** need to change the version or build number. It goes up by one on its own.
 
-1. Install **TestFlight** from the App Store on your iPhone.
-2. Ask whoever handed this over to add your Apple ID email as a tester.
-3. Accept the emailed invitation and install Fincore from TestFlight.
+### Step 4 — Wait for Apple
 
-Note that a TestFlight build has to be produced first, using the `preview` or `production`
-profile in `expo-app/eas.json`. If nobody has done that yet, this option is not available
-until someone does.
+When the terminal says **"Submitted your app to Apple App Store Connect!"**, Apple takes another
+5–10 minutes to process it. You will get an email from Apple when it is ready.
+
+### Step 5 — Install it
+
+On an iPhone that has been invited as a tester:
+
+1. Open the **TestFlight** app (free, from the App Store).
+2. Fincore will show an update. Tap **Update** (or **Install** the first time).
+
+To invite someone new: go to https://appstoreconnect.apple.com, open **Fincore → TestFlight**,
+and add their Apple ID email as a tester. They get an email invitation to accept.
 
 ---
 
@@ -142,39 +126,50 @@ until someone does.
 
 | What you see | What it means | What to do |
 |---|---|---|
-| `Cannot find native module 'ExpoAudio'` (or similar) | You are on Expo Go, or your build predates a new feature | Run `npx expo run:ios` again to rebuild |
-| Screens load but stay empty, spinners forever | The server is not running | Check the first Terminal window is still up |
-| `Dev sign-in failed` | The server started without development mode | Confirm `ENVIRONMENT=development` is in `my-agent/.env`, then restart the server |
-| `Unauthorized` / kicked back to sign-in | Your saved login expired or is no longer valid | Sign in again — this is intended behaviour |
-| `No code signing certificates` | Xcode has no Apple ID | Xcode → Settings → Accounts → add any Apple ID |
-| `cd: no such file or directory` | You are in the wrong folder | `expo-app` and `my-agent` are side by side, not nested |
-| Simulator camera shows grey stripes | Normal — the simulator has no real camera | Test the camera on a physical iPhone |
+| `Apple 401 detected` … `Log in to your Apple Developer account` / `Failed to fetch Apple provisioning profiles` | Harmless. The tool tried an optional check with Apple and skipped it | Nothing — the build carries on. It did this on the successful build 10 too |
+| `eas: command not found` / `'eas' is not recognized` | The EAS tool is not installed | `npm install -g eas-cli` |
+| `Not logged in` | Expo login has expired | `eas login`, using the `qutyco` account |
+| `Build failed` | Something in the code is wrong | Open the `expo.dev` link from Step 3 and read the red part of the log |
+| Build finished but nothing in TestFlight | Apple is still processing | Wait for Apple's email, usually under 15 minutes |
+| App installs but sign-in fails, or screens stay empty | The live server is down | See "The server" below |
+| `cd: no such file or directory` / `Cannot find path` | You are in the wrong folder | Start again from Step 1 |
 
 ---
 
-## Before you give a build to a tester
+## The server
 
-A TestFlight build does **not** talk to your laptop. It talks to the live server at
-`35.178.139.5`. That server is currently running older code than this project, which means a
-tester would lose the details they typed in as soon as they finished the quiz.
+The TestFlight app uses the live server at `http://35.178.139.5:8000`. To check it is up, open
+that address in a web browser. It should say `{"status":"ok"}`.
 
-The server has to be updated first. See `GO_LIVE.md` section 0 — it is the first thing in that
-document for a reason.
+**Updating the server is not done from this laptop.** It uses `deploy.sh`, which needs a private
+key file (`fincore-key.pem`) that is not on this machine. If you change anything in `my-agent/`,
+the person who holds that key has to deploy it. See `GO_LIVE.md` section 0.
+
+If you only change things in `expo-app/`, you do not need to touch the server at all.
 
 ---
 
 ## Things that will surprise you
 
-- **The simulator cannot do everything.** No real camera, no Face ID, no torch/flash, no push
-  notifications. Those need a physical iPhone.
+- **You cannot preview changes instantly on this laptop.** Seeing a change on a phone means
+  doing a TestFlight build (about 20 minutes end to end). Live previewing needs a Mac with Xcode —
+  `CLAUDE.md` has those steps if you ever get one.
+- **Expo Go will not work.** If someone suggests the Expo Go app: this project uses features
+  (camera, Face ID, Sign in with Apple and others) that Expo Go does not include. TestFlight is
+  the way.
+- **Builds are limited.** Each build uses one of the Expo plan's monthly builds, so do not build
+  for every tiny change — batch them up.
+- **"Skip Sign-In (dev only)" does not appear in TestFlight.** That button only exists when
+  running on a Mac for development. TestFlight users sign in with Google, Apple or Microsoft.
 - **Text messages only reach one phone.** Two-factor authentication is built and working, but
   the AWS account is still in "sandbox" mode, which only delivers texts to one pre-approved
   number. The feature is therefore **hidden** in the app on purpose. Do not switch it on until
   the AWS side is sorted — see `GO_LIVE.md`.
-- **Signing out no longer means redoing the quiz.** The 60 questions are saved to the server,
-  so signing back in skips straight to the app.
-- **The app is not ready for the public yet.** `GO_LIVE.md` lists what is outstanding. The most
-  serious item is that traffic to the server is currently unencrypted.
+- **Signing out does not mean redoing the quiz.** The 60 answers are saved to the server, so
+  signing back in skips straight to the app.
+- **The app is not ready for the public yet.** TestFlight testers are fine; the App Store is
+  not. `GO_LIVE.md` lists what is outstanding. The most serious item is that traffic to the
+  server is currently unencrypted.
 
 ---
 
@@ -182,31 +177,21 @@ document for a reason.
 
 | Path | What it is |
 |---|---|
-| `expo-app/` | The phone app |
+| `expo-app/` | The phone app — run the build commands from here |
 | `expo-app/app/` | The screens — `login`, `info`, `survey`, `results`, `(tabs)/` |
 | `expo-app/config.ts` | Server address and feature switches |
+| `expo-app/eas.json` | Build settings — the `production` profile is the TestFlight one |
 | `my-agent/` | The Python server |
-| `my-agent/server.py` | Every server endpoint |
 | `my-agent/.env` | Secrets. **Never commit this file** |
-| `my-agent/tests/` | Automated checks — `pytest tests/ -v` |
+| `deploy.sh` | Updates the live server (needs the key file — not on this laptop) |
 | `landing/` | Static marketing page |
 | `GO_LIVE.md` | What must happen before real users |
 | `CLAUDE.md` | Technical detail for developers and AI assistants |
 
----
+Useful links:
 
-## Checking you have not broken anything
-
-```bash
-# Server tests
-cd my-agent && source venv/bin/activate && pytest tests/ -v
-
-# App type-checking
-cd expo-app && npx tsc --noEmit
-```
-
-Both should pass before committing. Neither tests the visual appearance — for that, open the
-app and look at it.
+- Expo builds: https://expo.dev/accounts/qutyco/projects/fincore/builds
+- App Store Connect (TestFlight): https://appstoreconnect.apple.com/apps/6772169954/testflight/ios
 
 ---
 
